@@ -10,9 +10,14 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
-    "typescript": "^5.3.0",
-    "@types/chrome": "^0.0.260"
+    "@types/chrome": "^0.0.260",
+    "typescript": "^5.3.0"
   },
-  "keywords": ["chrome-extension", "linkedin", "outreach", "ai"],
+  "keywords": [
+    "chrome-extension",
+    "linkedin",
+    "outreach",
+    "ai"
+  ],
   "license": "MIT"
 }

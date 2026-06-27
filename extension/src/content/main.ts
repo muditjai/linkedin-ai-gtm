@@ -42,27 +42,31 @@ interface PageInfo {
 }
 
 // Listen for messages from background/popup
-chrome.runtime.onMessage.addListener(
-  (message: ContentMessage, _sender: chrome.runtime.MessageSender) => {
-    console.log('[Content] Received message:', message.type);
+if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+  chrome.runtime.onMessage.addListener(
+    (message: ContentMessage, _sender: chrome.runtime.MessageSender) => {
+      console.log('[Content] Received message:', message.type);
 
-    switch (message.type) {
-      case 'SCRAPE_MESSAGES':
-        return handleScrapeMessages(message.limit);
+      switch (message.type) {
+        case 'SCRAPE_MESSAGES':
+          return handleScrapeMessages(message.limit);
 
-      case 'GET_PAGE_INFO':
-        return getPageInfo();
+        case 'GET_PAGE_INFO':
+          return getPageInfo();
 
-      case 'HIGHLIGHT_CONVERSATION':
-        highlightConversation(message.conversationId || '');
-        return { success: true };
+        case 'HIGHLIGHT_CONVERSATION':
+          highlightConversation(message.conversationId || '');
+          return { success: true };
 
-      default:
-        console.warn('[Content] Unknown message type:', message.type);
-        return { success: false };
+        default:
+          console.warn('[Content] Unknown message type:', message.type);
+          return { success: false };
+      }
     }
-  }
-);
+  );
+} else {
+  console.log('[Content] Chrome runtime not available');
+}
 
 /**
  * Scrape messages from LinkedIn messages page
