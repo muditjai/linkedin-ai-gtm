@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn AI GTM - Full App</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body {
+      min-height: 100vh;
+      padding: 20px;
+    }
+    #app {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .content {
+      min-height: 500px;
+    }
+    .tab-content {
+      display: none;
+      padding: 20px;
+    }
+    .tab-content.active {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-logo">
+        <span class="logo-icon">LI</span>
+        <div class="header-title">
+          <h1>LinkedIn AI GTM</h1>
+          <p>AI-Powered Outreach - Full App</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span id="statusIndicator" class="status-dot active"></span>
+        <span id="statusText">Ready</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="dashboard">
+        Dashboard
+      </button>
+      <button class="tab" data-tab="messages">
+        Messages
+      </button>
+      <button class="tab" data-tab="sequencer">
+        Sequencer
+      </button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="content">
+      <!-- Dashboard Tab -->
+      <section id="dashboard-tab" class="tab-content active">
+        <h2>Dashboard</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="statConversations">0</div>
+            <div class="stat-label">Total Conversations</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statToReply">0</div>
+            <div class="stat-label">To Reply</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statSent">0</div>
+            <div class="stat-label">Sent</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statReceived">0</div>
+            <div class="stat-label">Received</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3 class="section-title">Outcomes</h3>
+          <div class="stats-row">
+            <div class="outcome-card positive">
+              <span class="outcome-value" id="statPositive">0</span>
+              <span class="outcome-label">Positive</span>
+            </div>
+            <div class="outcome-card negative">
+              <span class="outcome-value" id="statNegative">0</span>
+              <span class="outcome-label">Negative</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3 class="section-title">Actions</h3>
+          <button id="btnScrape" class="btn btn-primary">
+            Scrape Conversations
+          </button>
+        </div>
+      </section>
+
+      <!-- Messages Tab -->
+      <section id="messages-tab" class="tab-content">
+        <h2>Messages</h2>
+        <div class="messages-container" style="height: 600px;">
+          <div class="contacts-list" id="contactsList">
+            <div class="empty-state">
+              <p>No conversations loaded</p>
+              <p class="hint">Scrape conversations from the Dashboard</p>
+            </div>
+          </div>
+          <div class="conversation-view" id="conversationView">
+            <div class="empty-state">
+              <p>Select a conversation</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sequencer Tab -->
+      <section id="sequencer-tab" class="tab-content">
+        <h2>Sequencer</h2>
+        <div class="sequencer-container">
+          <div class="sequencer-header">
+            <input type="text" id="sequencerName" class="sequencer-name" 
+                   placeholder="Sequence Name" value="Default Outreach Sequence">
+            <button id="btnSaveSequencer" class="btn btn-secondary">Save</button>
+          </div>
+
+          <div class="sequencer-steps" id="sequencerSteps">
+          </div>
+
+          <div class="sequencer-actions">
+            <button id="btnAddStep" class="btn btn-secondary">
+              + Add Step
+            </button>
+            <button id="btnExecute" class="btn btn-primary">
+              Execute Sequence
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

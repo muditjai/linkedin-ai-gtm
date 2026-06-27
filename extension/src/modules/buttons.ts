@@ -12,10 +12,50 @@ import { loadConversations, renderContacts } from './messages.js';
  * Setup button event listeners
  */
 export function setupButtons(): void {
-  document.getElementById('btnScrape')?.addEventListener('click', scrapeConversations);
-  document.getElementById('btnSaveSequencer')?.addEventListener('click', saveSequencer);
-  document.getElementById('btnExecute')?.addEventListener('click', executeSequence);
-  document.getElementById('btnAddStep')?.addEventListener('click', addSequencerStep);
+  console.log('[Buttons] Setting up button listeners');
+  
+  const scrapeBtn = document.getElementById('btnScrape');
+  if (scrapeBtn) {
+    scrapeBtn.addEventListener('click', () => {
+      console.log('[Buttons] Scrape button clicked');
+      scrapeConversations();
+    });
+  }
+
+  const saveBtn = document.getElementById('btnSaveSequencer');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      console.log('[Buttons] Save button clicked');
+      saveSequencer();
+    });
+  }
+
+  const executeBtn = document.getElementById('btnExecute');
+  if (executeBtn) {
+    executeBtn.addEventListener('click', () => {
+      console.log('[Buttons] Execute button clicked');
+      executeSequence();
+    });
+  }
+
+  const addStepBtn = document.getElementById('btnAddStep');
+  if (addStepBtn) {
+    addStepBtn.addEventListener('click', () => {
+      console.log('[Buttons] Add step button clicked');
+      addSequencerStep();
+    });
+  }
+
+  const openFullApp = document.getElementById('openFullApp');
+  if (openFullApp) {
+    openFullApp.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('[Buttons] Open full app clicked');
+      openFullAppPage();
+    });
+  }
+
+  console.log('[Buttons] Button listeners set up');
 }
 
 /**
@@ -23,10 +63,14 @@ export function setupButtons(): void {
  */
 async function scrapeConversations(): Promise<void> {
   const btn = document.getElementById('btnScrape') as HTMLButtonElement | null;
-  if (!btn) return;
+  if (!btn) {
+    console.error('[Buttons] Scrape button not found');
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Scraping...';
+  console.log('[Buttons] Starting scrape...');
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -34,16 +78,20 @@ async function scrapeConversations(): Promise<void> {
       limit: 20
     } as ExtensionMessage);
 
+    console.log('[Buttons] Scrape response:', response);
+
     if (response.success) {
-      (window as unknown as { popupState: { conversations: unknown[] } }).popupState.conversations = 
-        (response as unknown as { conversations: unknown[] }).conversations || [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const convs: any = (response as any).conversations || [];
+      window.popupState.conversations = convs;
       renderContacts();
       await loadDashboard();
+      alert('Scraped ' + window.popupState.conversations.length + ' conversations!');
     } else {
       alert('Error: ' + (response as { error: string }).error);
     }
   } catch (error) {
-    console.error('[Popup] Error scraping:', error);
+    console.error('[Buttons] Error scraping:', error);
     alert('Failed to scrape. Make sure you are on LinkedIn.');
   } finally {
     btn.disabled = false;
@@ -56,19 +104,28 @@ async function scrapeConversations(): Promise<void> {
  */
 async function saveSequencer(): Promise<void> {
   const nameInput = document.getElementById('sequencerName') as HTMLInputElement | null;
-  if (!nameInput) return;
+  if (!nameInput) {
+    console.error('[Buttons] Sequencer name input not found');
+    return;
+  }
 
-  const state = (window as unknown as { popupState: { sequencer: { name: string } } }).popupState;
-  state.sequencer.name = nameInput.value;
+  if (!window.popupState.sequencer) {
+    console.error('[Buttons] No sequencer loaded');
+    alert('No sequencer loaded');
+    return;
+  }
+
+  window.popupState.sequencer.name = nameInput.value;
+  console.log('[Buttons] Saving sequencer:', window.popupState.sequencer.name);
 
   try {
     await chrome.runtime.sendMessage({
       type: 'SAVE_SEQUENCER',
-      sequencer: state.sequencer
+      sequencer: window.popupState.sequencer
     } as ExtensionMessage);
     alert('Sequencer saved!');
   } catch (error) {
-    console.error('[Popup] Error saving sequencer:', error);
+    console.error('[Buttons] Error saving sequencer:', error);
     alert('Failed to save sequencer');
   }
 }
@@ -77,8 +134,12 @@ async function saveSequencer(): Promise<void> {
  * Add new sequencer step
  */
 function addSequencerStep(): void {
-  const state = window.popupState;
-  if (!state.sequencer) return;
+  console.log('[Buttons] Adding new step');
+  
+  if (!window.popupState.sequencer) {
+    console.error('[Buttons] No sequencer loaded');
+    return;
+  }
   
   const newStep = {
     id: `step_${Date.now()}`,
@@ -86,8 +147,8 @@ function addSequencerStep(): void {
     content: 'New message step...',
     next: null
   };
-  state.sequencer.steps.push(newStep);
-  renderSequencer(state.sequencer);
+  window.popupState.sequencer.steps.push(newStep);
+  renderSequencer(window.popupState.sequencer);
 }
 
 /**
@@ -101,16 +162,29 @@ async function executeSequence(): Promise<void> {
   btn.textContent = 'Executing...';
 
   try {
-    const state = window.popupState;
     const response = await chrome.runtime.sendMessage({
       type: 'EXECUTE_SEQUENCE',
-      sequencer: state.sequencer
+      sequencer: window.popupState.sequencer
     } as ExtensionMessage);
     alert((response as { message: string }).message || 'Sequence executed!');
   } catch (error) {
-    console.error('[Popup] Error executing sequence:', error);
+    console.error('[Buttons] Error executing sequence:', error);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Execute Sequence';
+  }
+}
+
+/**
+ * Open full app page
+ */
+async function openFullAppPage(): Promise<void> {
+  console.log('[Buttons] Opening full app page');
+  try {
+    await chrome.runtime.sendMessage({
+      type: 'OPEN_FULL_APP'
+    } as ExtensionMessage);
+  } catch (error) {
+    console.error('[Buttons] Error opening full app:', error);
   }
 }

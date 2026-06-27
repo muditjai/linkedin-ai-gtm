@@ -35,8 +35,9 @@ chrome.runtime.onMessage.addListener(
         handleAnalysis(message, sender);
         break;
 
-      case 'OPEN_POPUP':
-        chrome.action.openPopup();
+      case 'OPEN_FULL_APP':
+        // Open the full app in a new tab
+        chrome.tabs.create({ url: 'fullpage.html' });
         break;
 
       default:
