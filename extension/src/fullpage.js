@@ -16,18 +16,17 @@ async function sendMessage(type, data = {}) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('[FullPage] Starting...');
-  setupTabs();
+  setupNav();
   setupButtons();
   await Promise.all([loadDashboard(), loadSequencer(), loadConversations()]);
 });
 
-function setupTabs() {
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      const name = tab.getAttribute('data-tab');
-      if (!name) return;
-      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.getAttribute('data-tab') === name));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === name + '-tab'));
+function setupNav() {
+  document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const page = btn.getAttribute('data-page');
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === 'page-' + page));
     });
   });
 }
@@ -36,7 +35,7 @@ function setupButtons() {
   document.getElementById('btnScrape')?.addEventListener('click', handleScrape);
   document.getElementById('btnSaveSequencer')?.addEventListener('click', handleSave);
   document.getElementById('btnAddStep')?.addEventListener('click', handleAddStep);
-  document.getElementById('btnExecute')?.addEventListener('click', () => alert('Phase 2'));
+  document.getElementById('btnExecute')?.addEventListener('click', () => alert('Phase 2 feature'));
 }
 
 async function handleScrape() {
@@ -62,12 +61,13 @@ async function loadDashboard() {
 }
 
 function renderDashboard(d) {
-  const s = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = String(v); };
-  s('statConversations', d.totalConversations); s('statToReply', d.messagesToReply);
-  s('statSent', d.sentMessages); s('statReceived', d.receivedMessages);
-  s('statPositive', d.positiveOutcomes); s('statNegative', d.negativeOutcomes);
-  const t = document.getElementById('lastScrapeTime');
-  if (t) t.textContent = d.lastScrapeTime ? new Date(d.lastScrapeTime).toLocaleString() : 'Never';
+  const s = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  s('statConversations', d.totalConversations);
+  s('statToReply', d.messagesToReply);
+  s('statSent', d.sentMessages);
+  s('statReceived', d.receivedMessages);
+  s('statPositive', d.positiveOutcomes);
+  s('statNegative', d.negativeOutcomes);
 }
 
 async function loadSequencer() {
@@ -82,7 +82,7 @@ function renderSequencer(s) {
   if (ni) ni.value = s.name;
   const c = document.getElementById('sequencerSteps');
   if (c) c.innerHTML = s.steps.map((step, i) => 
-    '<div class="sequencer-step"><span class="step-number">' + (i+1) + '</span><div class="step-content"><div class="step-type">' + step.type + '</div><div class="step-detail">' + (step.content || step.prompt || 'Wait ' + step.duration + ' days') + '</div></div></div>'
+    '<div class="seq-step"><span class="seq-num">' + (i+1) + '</span><div class="seq-info"><div class="seq-type">' + step.type + '</div><div class="seq-detail">' + (step.content || step.prompt || 'Wait ' + step.duration + ' days') + '</div></div></div>'
   ).join('');
 }
 
@@ -112,7 +112,7 @@ function renderContacts() {
   if (!c) return;
   if (!state.conversations.length) { c.innerHTML = '<div class="empty-state"><p>No conversations</p></div>'; return; }
   c.innerHTML = state.conversations.map((conv, i) => 
-    '<div class="contact-item" data-index="' + i + '"><div class="contact-avatar">' + conv.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() + '</div><div class="contact-name">' + conv.name + '</div></div>'
+    '<div class="contact-item" data-index="' + i + '"><div class="contact-avatar">' + getInitials(conv.name) + '</div><div><div class="contact-name">' + conv.name + '</div><div class="contact-preview">' + (conv.preview || '') + '</div></div></div>'
   ).join('');
   c.querySelectorAll('.contact-item').forEach(item => {
     item.addEventListener('click', () => selectConversation(parseInt(item.getAttribute('data-index') || '0')));
@@ -124,5 +124,9 @@ function selectConversation(i) {
   document.querySelectorAll('.contact-item').forEach((item, idx) => item.classList.toggle('active', idx === i));
   const conv = state.activeConversation;
   const v = document.getElementById('conversationView');
-  if (v && conv) v.innerHTML = '<div class="conversation-header"><div class="contact-avatar">' + conv.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() + '</div><div class="contact-info"><div class="contact-name">' + conv.name + '</div><div class="conversation-time">' + conv.time + '</div></div></div><div class="conversation-messages"><div class="message-preview">' + (conv.preview || 'No messages') + '</div></div>';
+  if (v && conv) v.innerHTML = '<h3>' + conv.name + '</h3><p>' + (conv.preview || 'No messages') + '</p>';
+}
+
+function getInitials(name) {
+  return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
 }

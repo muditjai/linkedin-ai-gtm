@@ -3,154 +3,156 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkedIn AI GTM - Full App</title>
-  <link rel="stylesheet" href="popup.css">
+  <title>LinkedIn AI GTM</title>
   <style>
-    body {
-      min-height: 100vh;
-      padding: 20px;
-    }
-    #app {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-    .content {
-      min-height: 500px;
-    }
-    .tab-content {
-      display: none;
-      padding: 20px;
-    }
-    .tab-content.active {
-      display: block;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #1a1a1a; min-height: 100vh; }
+    .app { display: flex; flex-direction: column; min-height: 100vh; }
+    .header { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .header-logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icon { width: 40px; height: 40px; background: white; color: #0a66c2; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; }
+    .header h1 { font-size: 20px; font-weight: 600; }
+    .header p { font-size: 12px; opacity: 0.9; }
+    .header-status { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    .status-dot { width: 10px; height: 10px; background: #22c55e; border-radius: 50%; }
+    .nav { background: white; border-bottom: 1px solid #e5e7eb; padding: 0 24px; }
+    .nav-list { display: flex; gap: 4px; list-style: none; }
+    .nav-btn { padding: 16px 24px; background: none; border: none; border-bottom: 2px solid transparent; color: #6b7280; font-size: 14px; font-weight: 500; cursor: pointer; }
+    .nav-btn:hover { color: #4f46e5; }
+    .nav-btn.active { color: #4f46e5; border-bottom-color: #4f46e5; }
+    .main { flex: 1; padding: 24px; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .page-header { margin-bottom: 24px; }
+    .page-title { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    .page-desc { color: #6b7280; }
+    .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .card-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .stat-card { background: #f9fafb; border-radius: 8px; padding: 20px; text-align: center; }
+    .stat-value { font-size: 32px; font-weight: 700; color: #4f46e5; }
+    .stat-label { font-size: 12px; color: #6b7280; text-transform: uppercase; margin-top: 4px; }
+    .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: #4f46e5; color: white; }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-secondary { background: #f3f4f6; color: #374151; }
+    .btn-secondary:hover { background: #e5e7eb; }
+    .flex { display: flex; gap: 16px; }
+    .flex-1 { flex: 1; }
+    .sidebar { width: 300px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .sidebar-header { padding: 16px; border-bottom: 1px solid #e5e7eb; font-weight: 600; }
+    .contact-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+    .contact-item:hover { background: #f9fafb; }
+    .contact-item.active { background: #4f46e5; color: white; }
+    .contact-avatar { width: 40px; height: 40px; background: #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; }
+    .contact-name { font-weight: 500; }
+    .contact-preview { font-size: 12px; color: #9ca3af; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .messages-area { flex: 1; background: white; border-radius: 12px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: #9ca3af; }
+    .seq-input { width: 100%; padding: 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 16px; margin-bottom: 16px; }
+    .seq-steps { display: flex; flex-direction: column; gap: 12px; }
+    .seq-step { display: flex; align-items: center; gap: 12px; padding: 16px; background: #f9fafb; border-radius: 8px; }
+    .seq-num { width: 32px; height: 32px; background: #4f46e5; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+    .seq-info { flex: 1; }
+    .seq-type { font-size: 12px; color: #6b7280; text-transform: uppercase; }
+    .seq-detail { font-weight: 500; }
+    .seq-actions { display: flex; gap: 12px; margin-top: 16px; }
+    .footer { padding: 16px 24px; border-top: 1px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 12px; }
   </style>
 </head>
 <body>
-  <div id="app">
-    <!-- Header -->
+  <div class="app">
     <header class="header">
       <div class="header-logo">
-        <span class="logo-icon">LI</span>
-        <div class="header-title">
+        <div class="logo-icon">LI</div>
+        <div>
           <h1>LinkedIn AI GTM</h1>
-          <p>AI-Powered Outreach - Full App</p>
+          <p>AI-Powered Outreach Platform</p>
         </div>
       </div>
       <div class="header-status">
-        <span id="statusIndicator" class="status-dot active"></span>
-        <span id="statusText">Ready</span>
+        <div class="status-dot"></div>
+        <span>Ready</span>
       </div>
     </header>
 
-    <!-- Navigation Tabs -->
-    <nav class="tabs">
-      <button class="tab active" data-tab="dashboard">
-        Dashboard
-      </button>
-      <button class="tab" data-tab="messages">
-        Messages
-      </button>
-      <button class="tab" data-tab="sequencer">
-        Sequencer
-      </button>
+    <nav class="nav">
+      <ul class="nav-list">
+        <li><button class="nav-btn active" data-page="dashboard">Dashboard</button></li>
+        <li><button class="nav-btn" data-page="messages">Messages</button></li>
+        <li><button class="nav-btn" data-page="sequencer">Sequencer</button></li>
+      </ul>
     </nav>
 
-    <!-- Tab Content -->
-    <main class="content">
-      <!-- Dashboard Tab -->
-      <section id="dashboard-tab" class="tab-content active">
-        <h2>Dashboard</h2>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value" id="statConversations">0</div>
-            <div class="stat-label">Total Conversations</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="statToReply">0</div>
-            <div class="stat-label">To Reply</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="statSent">0</div>
-            <div class="stat-label">Sent</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value" id="statReceived">0</div>
-            <div class="stat-label">Received</div>
+    <main class="main">
+      <!-- Dashboard -->
+      <div id="page-dashboard" class="page active">
+        <div class="page-header">
+          <h2 class="page-title">Dashboard</h2>
+          <p class="page-desc">Overview of your LinkedIn outreach performance</p>
+        </div>
+        
+        <div class="card">
+          <h3 class="card-title">Overview</h3>
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-value" id="statConversations">0</div><div class="stat-label">Conversations</div></div>
+            <div class="stat-card"><div class="stat-value" id="statToReply">0</div><div class="stat-label">To Reply</div></div>
+            <div class="stat-card"><div class="stat-value" id="statSent">0</div><div class="stat-label">Sent</div></div>
+            <div class="stat-card"><div class="stat-value" id="statReceived">0</div><div class="stat-label">Received</div></div>
+            <div class="stat-card"><div class="stat-value" id="statPositive">0</div><div class="stat-label">Positive</div></div>
+            <div class="stat-card"><div class="stat-value" id="statNegative">0</div><div class="stat-label">Negative</div></div>
           </div>
         </div>
 
-        <div class="section">
-          <h3 class="section-title">Outcomes</h3>
-          <div class="stats-row">
-            <div class="outcome-card positive">
-              <span class="outcome-value" id="statPositive">0</span>
-              <span class="outcome-label">Positive</span>
-            </div>
-            <div class="outcome-card negative">
-              <span class="outcome-value" id="statNegative">0</span>
-              <span class="outcome-label">Negative</span>
-            </div>
+        <div class="card">
+          <h3 class="card-title">Actions</h3>
+          <button id="btnScrape" class="btn btn-primary">Scrape Conversations from LinkedIn</button>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div id="page-messages" class="page">
+        <div class="page-header">
+          <h2 class="page-title">Messages</h2>
+          <p class="page-desc">View and manage your LinkedIn conversations</p>
+        </div>
+        
+        <div class="flex">
+          <div class="sidebar">
+            <div class="sidebar-header">Conversations</div>
+            <div id="contactsList"><div class="empty-state"><p>No conversations</p></div></div>
+          </div>
+          <div class="messages-area">
+            <div id="conversationView"><div class="empty-state"><p>Select a conversation</p></div></div>
           </div>
         </div>
+      </div>
 
-        <div class="section">
-          <h3 class="section-title">Actions</h3>
-          <button id="btnScrape" class="btn btn-primary">
-            Scrape Conversations
-          </button>
+      <!-- Sequencer -->
+      <div id="page-sequencer" class="page">
+        <div class="page-header">
+          <h2 class="page-title">Sequencer</h2>
+          <p class="page-desc">Create automated outreach sequences</p>
         </div>
-      </section>
-
-      <!-- Messages Tab -->
-      <section id="messages-tab" class="tab-content">
-        <h2>Messages</h2>
-        <div class="messages-container" style="height: 600px;">
-          <div class="contacts-list" id="contactsList">
-            <div class="empty-state">
-              <p>No conversations loaded</p>
-              <p class="hint">Scrape conversations from the Dashboard</p>
-            </div>
-          </div>
-          <div class="conversation-view" id="conversationView">
-            <div class="empty-state">
-              <p>Select a conversation</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Sequencer Tab -->
-      <section id="sequencer-tab" class="tab-content">
-        <h2>Sequencer</h2>
-        <div class="sequencer-container">
-          <div class="sequencer-header">
-            <input type="text" id="sequencerName" class="sequencer-name" 
-                   placeholder="Sequence Name" value="Default Outreach Sequence">
+        
+        <div class="card">
+          <h3 class="card-title">Sequence Settings</h3>
+          <input type="text" id="sequencerName" class="seq-input" placeholder="Sequence Name" value="Default Outreach">
+          <div id="sequencerSteps" class="seq-steps"></div>
+          <div class="seq-actions">
+            <button id="btnAddStep" class="btn btn-secondary">+ Add Step</button>
             <button id="btnSaveSequencer" class="btn btn-secondary">Save</button>
-          </div>
-
-          <div class="sequencer-steps" id="sequencerSteps">
-          </div>
-
-          <div class="sequencer-actions">
-            <button id="btnAddStep" class="btn btn-secondary">
-              + Add Step
-            </button>
-            <button id="btnExecute" class="btn btn-primary">
-              Execute Sequence
-            </button>
+            <button id="btnExecute" class="btn btn-primary">Execute Sequence</button>
           </div>
         </div>
-      </section>
+      </div>
     </main>
 
-    <!-- Footer -->
     <footer class="footer">
-      <span class="version">v1.0.0</span>
+      LinkedIn AI GTM v1.0.0
     </footer>
   </div>
 
-  <script type="module" src="fullpage.js"></script>
+  <script src="fullpage.js"></script>
 </body>
 </html>
