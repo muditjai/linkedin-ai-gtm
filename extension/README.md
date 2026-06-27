@@ -33,18 +33,37 @@ AI-powered outreach capabilities for LinkedIn - automate messaging, analyze conv
    npm run build
    ```
 
-4. Open **Brave Browser** and navigate to:
+4. Copy static files to dist:
+   ```bash
+   cp manifest.json popup.html popup.css dist/
+   cp src/content/styles.css dist/content/
+   ```
+
+5. Update manifest paths (the build doesn't do this automatically):
+   ```bash
+   # Edit dist/manifest.json to change:
+   # "service_worker": "src/background.ts" -> "service_worker": "background.js"
+   # "js": ["src/content/main.ts"] -> "js": ["content/main.js"]
+   # "css": ["src/content/styles.css"] -> "css": ["content/styles.css"]
+   ```
+
+6. Update popup.html script src:
+   ```bash
+   sed -i 's|src/popup.ts|popup.js|g' dist/popup.html
+   ```
+
+7. Open **Brave Browser** and navigate to:
    ```
    brave://extensions
    ```
 
-5. Enable **Developer mode** (toggle in top-right corner)
+8. Enable **Developer mode** (toggle in top-right corner)
 
-6. Click **Load unpacked**
+9. Click **Load unpacked**
 
-7. Select the `extension/dist` folder
+10. Select the `extension/dist` folder
 
-8. The extension icon will appear in your browser toolbar
+11. The extension icon will appear in your browser toolbar
 
 ### Development Mode (Auto-Reload)
 
