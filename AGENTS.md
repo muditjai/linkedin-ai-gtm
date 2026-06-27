@@ -2,44 +2,54 @@
 
 ## Problem Statement
 
-I want to create a Chrome extension with AI capabilities for doing AI-powered outreach on LinkedIn. The extension will help automate and optimize LinkedIn messaging by scraping conversations, using AI for message reflection/analysis, and providing a visual sequencer for orchestrating outreach campaigns.
+Build a Chrome extension with AI-powered outreach capabilities for LinkedIn. The product should help users automate and optimize LinkedIn messaging by scraping conversations, analyzing message quality, and orchestrating outreach campaigns through a visual sequencer.
 
-## Infrastructure
+## Architecture and Infrastructure
 
-Tools and services to use:
-- **MongoDB** - Store scraped LinkedIn contacts, conversations, and feedback data
-- **Gemini 3.5 API** - AI capabilities for message analysis and self-reflection
-- **Chrome Extension** - Frontend interface
+### Core stack
+- **Frontend:** Chrome extension
+- **Service Backend:** Containerized service layer for frontend requests and business logic
+- **Agent Backend:** LangGraph-based agent backend
+- **Hosting:** DigitalOcean
+- **Database:** MongoDB
 
-## Features
+### AI services
+- **Gemini 3.5:** Use for message reflection, analysis, and contextual understanding
+- **Message generation model:** Use an LLM from the DigitalOcean model list, for example `gpt-oss-20b` or another supported option
 
-The following features need to be implemented one after another:
+## Feature Roadmap
 
-### Phase 1: Core UI
-1. **Home Dashboard** - Agent opens a home page with dashboard and summary
-2. **Messages Tab** - Left sidebar showing inbox of all ongoing conversations
-3. **Sequencer Tab** - Canvas where user can specify actions to take (delays, hardcoded messages, AI customized messages)
+### Phase 1: Core frontend UI
+1. **Home Dashboard** - Provide a landing experience with an overview dashboard and summary, including tasks such as messages to reply to, previously sent messages, replies received, positive and negative outcomes, actionable follow-ups, and scraping status or errors.
+2. **Messages Tab** - Show an inbox-style view of ongoing conversations with a left-side contact list and a right-side conversation thread view.
+3. **Sequencer Tab** - Provide a canvas for defining outreach actions such as delays, fixed messages, and AI-generated personalized messages.
+4. **Scraping functionality** - Read the LinkedIn messages page and load conversations into the service backend gradually to reduce the risk of account bans.
 
-### Phase 2: AI Integration
-4. **AI Self-Reflection** - Use Gemini 3.5 to analyze messages and present results in the Messages tab
-5. **User Feedback System** - Record user feedback on what constitutes a good vs bad message
-6. **Model Fine-tuning** - Train on messages and feedback to fine-tune a model
+### Phase 2: Service backend
+- Provide standard endpoints for CRUD operations on message threads and sequencer data.
+- Handle storage, updates, and retrieval of conversations, sequencer definitions, and related metadata.
+- Support sequencer execution so the agent can evaluate a conversation and decide the next best message while considering context and previous feedback.
+
+### Phase 3: AI integration
+1. **AI Self-Reflection** - Analyze outbound and inbound messages and present insights in the Messages tab.
+2. **User Feedback System** - Capture feedback on what makes a good versus a bad message.
+3. **Model Fine-Tuning** - Use message and feedback data to improve future message generation.
 
 ## Context Data Integration
 
-Fetch and store context data for each recipient to enable personalized AI outreach:
+For each recipient, collect and store context that can improve personalization:
 
-1. **LinkedIn Profile** - Fetch recipient's LinkedIn page and profile info
-2. **Company Information** - Fetch their current company name and details
-3. **Email Conversations** - Fetch previous conversations with them via email
-4. **Common Connections** - Find mutual connections between user and recipient
-5. **Social Posts** - Fetch their LinkedIn and Facebook posts
-6. **Interest Filtering** - Filter for connections you already know or themes they discuss that interest you
-7. **Context Editing** - Allow user to edit fetched context or click yes/no to confirm
-8. **Feedback Storage** - Store context feedback in MongoDB for future model training
+1. **LinkedIn Profile** - Fetch public profile details and professional background.
+2. **Company Information** - Retrieve the current company name and relevant company context.
+3. **Email Conversations** - Pull prior email conversations with the recipient if available.
+4. **Common Connections** - Identify shared connections between the user and recipient.
+5. **Social Posts** - Review LinkedIn or Facebook posts that may reveal interests or recent activity.
+6. **Interest Filtering** - Prioritize connections or themes the user already knows or cares about.
+7. **Context Editing** - Let the user review, edit, or approve fetched context before use.
+8. **Feedback Storage** - Save context feedback into MongoDB for future model training.
 
-## Technical Stack (TBD)
-- Chrome Extension
-- MongoDB for data storage
-- Gemini 3.5 API for AI capabilities
-- Visual canvas for sequencer
+## Configuration and Secrets
+
+- Store the Gemini API key in a local gitignored file such as `.env.local`.
+- Keep secrets out of the repository and out of any committed config files.
+- Use environment variables for API keys and service credentials.
