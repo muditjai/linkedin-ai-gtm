@@ -7,3 +7,15 @@
 # Local skill installation artifacts
 .agents/
 skills-lock.json
+
+# Extension build output
+extension/dist/
+extension/node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

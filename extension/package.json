@@ -1,0 +1,18 @@
+{
+  "name": "linkedin-ai-gtm-extension",
+  "version": "1.0.0",
+  "description": "AI-powered outreach capabilities for LinkedIn",
+  "main": "src/popup.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "package": "npm run build && zip -r releases/extension.zip dist",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "@types/chrome": "^0.0.260"
+  },
+  "keywords": ["chrome-extension", "linkedin", "outreach", "ai"],
+  "license": "MIT"
+}

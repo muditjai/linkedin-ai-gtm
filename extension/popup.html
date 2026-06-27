@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn AI GTM</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-logo">
+        <span class="logo-icon">LI</span>
+        <div class="header-title">
+          <h1>LinkedIn AI GTM</h1>
+          <p>AI-Powered Outreach</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <span id="statusIndicator" class="status-dot active"></span>
+        <span id="statusText">Ready</span>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="dashboard">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+        </svg>
+        Dashboard
+      </button>
+      <button class="tab" data-tab="messages">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path>
+        </svg>
+        Messages
+      </button>
+      <button class="tab" data-tab="sequencer">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"></path>
+        </svg>
+        Sequencer
+      </button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="content">
+      <!-- Dashboard Tab -->
+      <section id="dashboard-tab" class="tab-content active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="statConversations">0</div>
+            <div class="stat-label">Total Conversations</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statToReply">0</div>
+            <div class="stat-label">To Reply</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statSent">0</div>
+            <div class="stat-label">Sent</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="statReceived">0</div>
+            <div class="stat-label">Received</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3 class="section-title">Outcomes</h3>
+          <div class="stats-row">
+            <div class="outcome-card positive">
+              <span class="outcome-value" id="statPositive">0</span>
+              <span class="outcome-label">Positive</span>
+            </div>
+            <div class="outcome-card negative">
+              <span class="outcome-value" id="statNegative">0</span>
+              <span class="outcome-label">Negative</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3 class="section-title">Scrape Status</h3>
+          <div class="scrape-status">
+            <div class="scrape-info">
+              <span>Last scrape:</span>
+              <span id="lastScrapeTime">Never</span>
+            </div>
+            <button id="btnScrape" class="btn btn-primary">
+              Scrape Conversations
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Messages Tab -->
+      <section id="messages-tab" class="tab-content">
+        <div class="messages-container">
+          <div class="contacts-list" id="contactsList">
+            <div class="empty-state">
+              <p>No conversations loaded</p>
+              <p class="hint">Scrape conversations from the Dashboard</p>
+            </div>
+          </div>
+          <div class="conversation-view" id="conversationView">
+            <div class="empty-state">
+              <p>Select a conversation</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Sequencer Tab -->
+      <section id="sequencer-tab" class="tab-content">
+        <div class="sequencer-container">
+          <div class="sequencer-header">
+            <input type="text" id="sequencerName" class="sequencer-name" 
+                   placeholder="Sequence Name" value="Default Outreach Sequence">
+            <button id="btnSaveSequencer" class="btn btn-secondary">Save</button>
+          </div>
+
+          <div class="sequencer-steps" id="sequencerSteps">
+            <!-- Steps will be rendered here -->
+          </div>
+
+          <div class="sequencer-actions">
+            <button id="btnAddStep" class="btn btn-secondary">
+              + Add Step
+            </button>
+            <button id="btnExecute" class="btn btn-primary">
+              Execute Sequence
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <span class="version">v1.0.0</span>
+      <a href="#" id="openFullApp" class="footer-link">Open Full App →</a>
+    </footer>
+  </div>
+
+  <script type="module" src="src/popup.ts"></script>
+</body>
+</html>

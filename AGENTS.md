@@ -1,5 +1,14 @@
 # Project Spec
 
+## Code Guidelines
+
+### Modular Code & Test Cases
+- Keep code modular - split large files into smaller, focused modules
+- Don't create super long files - if a file exceeds ~300 lines, consider splitting it
+- Write test cases for new functionality where appropriate
+- Use descriptive naming conventions aligned with the existing codebase
+- When implementing features, ensure they are properly validated
+
 ## Problem Statement
 
 Build a Chrome extension with AI-powered outreach capabilities for LinkedIn. The product should help users automate and optimize LinkedIn messaging by scraping conversations, analyzing message quality, and orchestrating outreach campaigns through a visual sequencer.
