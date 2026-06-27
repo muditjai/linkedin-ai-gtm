@@ -8,7 +8,6 @@ import { setupButtons } from './modules/buttons.js';
 import { loadDashboard } from './modules/dashboard.js';
 import { loadSequencer } from './modules/sequencer.js';
 import { loadConversations } from './modules/messages.js';
-import './types/shared.js';
 
 /**
  * Initialize popup

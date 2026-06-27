@@ -4,7 +4,6 @@
  */
 
 import type { Dashboard, ExtensionMessage } from '../types.js';
-import '../types/shared.js';
 
 /**
  * Load dashboard data

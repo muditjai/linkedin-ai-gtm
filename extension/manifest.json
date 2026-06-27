@@ -11,9 +11,6 @@
   "host_permissions": [
     "*://*.linkedin.com/*"
   ],
-  "action": {
-    "default_popup": "popup.html"
-  },
   "background": {
     "service_worker": "src/background.ts",
     "type": "module"
@@ -25,5 +22,8 @@
       "css": ["src/content/styles.css"],
       "run_at": "document_idle"
     }
-  ]
+  ],
+  "action": {
+    "default_title": "LinkedIn AI GTM"
+  }
 }
