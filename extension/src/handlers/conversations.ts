@@ -2,18 +2,26 @@
  * Conversations Handler
  *
  * Forwards scrape requests to the LinkedIn tab's content script. If the
- * content script isn't responding (e.g. the user opened the tab before
+ * content script isn't responding (typical when the tab was open before
  * the extension was installed/updated) we attempt to programmatically
- * inject it via `chrome.scripting.executeScript` and retry once.
+ * inject it via `chrome.scripting.executeScript` and retry, with the
+ * injected file path mirrored from the manifest registration.
  */
 
 import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
 
-const RETRY_DELAY_MS = 250;
+const FIRST_RETRY_DELAY_MS = 400;
+const SECOND_RETRY_DELAY_MS = 800;
+const MAX_SEND_ATTEMPTS = 3;
+
+interface ScrapePayload {
+  conversations?: Conversation[];
+  error?: string;
+}
 
 export async function handleConversations(
   message: ExtensionMessage,
-  _sender: chrome.runtime.MessageSender
+  _sender: chrome.runtime.MessageSender,
 ): Promise<ExtensionResponse> {
   console.log('[Conversations] Handling:', message.type);
 
@@ -54,22 +62,29 @@ async function scrapeConversations(
     return { success: false, error: 'LinkedIn tab is not accessible.' };
   }
 
-  // The content script is registered in the manifest, but Chrome won't
-  // inject it into tabs that were already open when the extension loaded
-  // (or when the manifest was last updated). Try once, fall back to a
-  // manual injection, then retry once more.
+  // Try the registered content script first. If it doesn't answer, fall
+  // back to a manual injection (which loads `content/main.js` into the
+  // same isolated world the manifest registers it in) and try again.
   let response = await trySendScrape(linkedInTab.id, limit);
+
   if (!response) {
     console.log('[Conversations] No response, attempting manual content script injection');
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: linkedInTab.id },
-        files: ['content/main.js'],
-      });
-    } catch (err) {
-      console.error('[Conversations] Manual injection failed:', err);
+    const injected = await injectContentScript(linkedInTab.id);
+    if (!injected.ok) {
+      return {
+        success: false,
+        error: `Content script injection failed: ${injected.reason}. Reload the LinkedIn tab and try again.`,
+      };
     }
-    await sleep(RETRY_DELAY_MS);
+    await sleep(FIRST_RETRY_DELAY_MS);
+    response = await trySendScrape(linkedInTab.id, limit);
+  }
+
+  // One more retry with a longer delay in case the script is still
+  // initialising.
+  if (!response) {
+    console.log('[Conversations] Still no response, retrying with longer delay');
+    await sleep(SECOND_RETRY_DELAY_MS);
     response = await trySendScrape(linkedInTab.id, limit);
   }
 
@@ -101,16 +116,47 @@ async function scrapeConversations(
 async function trySendScrape(
   tabId: number,
   limit: number,
-): Promise<{ conversations?: Conversation[]; error?: string } | null> {
+): Promise<ScrapePayload | null> {
+  for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'SCRAPE_CONVERSATIONS',
+        limit,
+      });
+      if (response) return response as ScrapePayload;
+      console.warn(`[Conversations] sendMessage returned empty (attempt ${attempt})`);
+    } catch (err) {
+      console.warn(`[Conversations] sendMessage failed (attempt ${attempt}):`, err);
+    }
+    if (attempt < MAX_SEND_ATTEMPTS) {
+      await sleep(150 * attempt);
+    }
+  }
+  return null;
+}
+
+/**
+ * Manually inject the registered content script. Returns a tagged result
+ * so the caller can surface a precise error message instead of the
+ * generic "did not respond" fallback.
+ */
+async function injectContentScript(
+  tabId: number,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   try {
-    const response = await chrome.tabs.sendMessage(tabId, {
-      type: 'SCRAPE_CONVERSATIONS',
-      limit,
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content/main.js'],
+      world: 'ISOLATED',
     });
-    return response ?? null;
+    if (!Array.isArray(results) || results.length === 0) {
+      return { ok: false, reason: 'executeScript returned no results' };
+    }
+    return { ok: true };
   } catch (err) {
-    console.warn('[Conversations] sendMessage failed:', err);
-    return null;
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error('[Conversations] executeScript threw:', reason);
+    return { ok: false, reason };
   }
 }
 

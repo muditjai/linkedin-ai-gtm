@@ -3,7 +3,7 @@
  *
  * The extension is configured (per AGENTS.md) to open as a full page rather
  * than a popup. Clicking the toolbar icon launches `fullpage.html` in a new
- * window via `chrome.windows.create`.
+ * tab via `chrome.tabs.create`.
  */
 
 import { handleConversations } from './handlers/conversations.js';
@@ -11,17 +11,11 @@ import { handleSequencer } from './handlers/sequencer.js';
 import { handleDashboard } from './handlers/dashboard.js';
 import { handleAnalysis } from './handlers/analysis.js';
 
-// Open the full app in a dedicated window when the toolbar icon is clicked.
+// Open the full app in a new tab when the toolbar icon is clicked.
 chrome.action.onClicked.addListener(() => {
-  console.log('[Background] Icon clicked, opening full app window');
+  console.log('[Background] Icon clicked, opening full app in a new tab');
   const url = chrome.runtime.getURL('fullpage.html');
-  chrome.windows.create({
-    url,
-    type: 'normal',
-    width: 1200,
-    height: 800,
-    focused: true,
-  });
+  chrome.tabs.create({ url });
 });
 
 // Centralised message router. Each handler returns a Promise that resolves
