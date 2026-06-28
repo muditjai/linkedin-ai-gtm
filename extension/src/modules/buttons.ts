@@ -39,6 +39,9 @@ export function setupButtons(): void {
   onClick('btnScrapeAll', () => {
     void scrapeAll();
   });
+  onClick('btnClearMessages', () => {
+    clearAllMessageState();
+  });
   onClick('btnTestConnection', () => {
     void testConnection();
   });
@@ -435,6 +438,80 @@ function logStatus(message: string, kind: LogKind = 'info'): void {
     return;
   }
   console.log(`[Buttons][${kind}] ${message}`);
+}
+
+/**
+ * Wipe all message-related UI state: the inbox list, the active thread,
+ * the per-conversation thread cache, the status-card counters, and
+ * restore the empty state in the right-hand thread pane.
+ *
+ * The activity log and the page-level "Scrapes" / "Errors" counters are
+ * intentionally NOT reset here - those are session-level audit info.
+ */
+function clearAllMessageState(): void {
+  // popupState
+  window.popupState.conversations = [];
+  window.popupState.threadMessages = [];
+  window.popupState.activeThreadId = null;
+  window.popupState.activeConversation = null;
+
+  // Re-render the contact list with the empty state.
+  renderContacts();
+  updateConversationCount();
+  const convCountEl = document.getElementById('conversationCount');
+  if (convCountEl) convCountEl.textContent = '0';
+
+  // Restore the right-hand thread pane to the empty state.
+  const view = document.getElementById('conversationView');
+  if (view) {
+    view.replaceChildren();
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const p = document.createElement('p');
+    p.textContent = 'Cleared. Run Scrape All to repopulate.';
+    empty.appendChild(p);
+    view.appendChild(empty);
+  }
+
+  const title = document.getElementById('threadTitle');
+  if (title) title.textContent = 'Select a conversation';
+  const badge = document.getElementById('threadBadge');
+  if (badge) {
+    badge.classList.add('hidden');
+    badge.textContent = '0';
+  }
+
+  // Reset dashboard-card counters.
+  for (const id of [
+    'threadMessageCount',
+    'scrollIterations',
+    'threadsScraped',
+  ]) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0';
+  }
+  const lastScrapeEl = document.getElementById('lastScrapeTime');
+  if (lastScrapeEl) lastScrapeEl.textContent = 'Never';
+  const tabUrlEl = document.getElementById('linkedinTabUrl');
+  if (tabUrlEl) tabUrlEl.textContent = '—';
+
+  // Also wipe the persisted scrape on the extension side so a re-scrape
+  // starts clean. (The inbox scroll position resets when the user
+  // navigates away, but persistence could otherwise carry stale rows
+  // across sessions.)
+  try {
+    void chrome.storage.local.remove([
+      'conversations',
+      'messages',
+      'threadId',
+      'threadLastScrapedAt',
+      'lastScrapeAllAt',
+    ]);
+  } catch (err) {
+    console.warn('[Buttons] Could not clear stored scrape:', err);
+  }
+
+  logStatus('Cleared all message state. Click Scrape All to repopulate.', 'info');
 }
 
 function recordScrape(): void {

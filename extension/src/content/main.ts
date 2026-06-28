@@ -155,6 +155,17 @@ function boot(): void {
       return true;
     }
 
+    if (message.type === 'SCRAPE_THREAD_BY_INDEX') {
+      const index = Number((message as Record<string, unknown>).index);
+      Promise.resolve(scrapeThreadByIndex(index))
+        .then(safeSend)
+        .catch((err: unknown) => {
+          console.error('[Content] Thread-by-index scrape threw:', err);
+          safeSend({ success: false, error: (err as Error).message });
+        });
+      return true;
+    }
+
     safeSend({ success: false, error: 'Unknown message type' });
     return false;
   });
@@ -661,7 +672,7 @@ async function scrapeAll(
       }
 
       logProgress(`Scraping thread ${i + 1}/${cap}...`);
-      link.click();
+      triggerClick(link);
       const navigated = await waitForUrl(/messaging\/thread\//i, THREAD_NAV_TIMEOUT_MS);
       if (!navigated) {
         console.warn('[Content] Thread', i + 1, 'did not navigate, giving up');
@@ -701,7 +712,7 @@ async function scrapeAll(
       try {
         const firstLink = pickConversationLink(conversationItems[0]);
         if (firstLink) {
-          firstLink.click();
+          triggerClick(firstLink);
           await waitForUrl(/\/messaging\/?$/i, 3000);
         } else {
           // Fall back to a direct URL change.
@@ -770,6 +781,76 @@ async function waitForUrl(pattern: RegExp, timeoutMs: number): Promise<boolean> 
 
 function logProgress(message: string): void {
   console.log('[Content]', message);
+}
+
+/**
+ * Click the Nth conversation in the inbox sidebar, wait for the SPA to
+ * navigate to its thread, then scrape the thread messages. Returns the
+ * thread URN + messages on success, or an error.
+ */
+async function scrapeThreadByIndex(
+  index: number,
+): Promise<ScrapeConversationsResponse> {
+  if (!isLinkedInMessagesPage()) {
+    return { success: false, error: 'Not on a LinkedIn messaging page.' };
+  }
+  if (index < 0) {
+    return { success: false, error: 'Invalid conversation index.' };
+  }
+
+  const items = Array.from(pickConversationItems());
+  if (index >= items.length) {
+    return {
+      success: false,
+      error: `Conversation index ${index} out of range (have ${items.length}).`,
+    };
+  }
+
+  const link = pickConversationLink(items[index]);
+  if (!link) {
+    return { success: false, error: 'Could not find clickable link for that conversation.' };
+  }
+
+  logProgress(`Opening conversation ${index + 1} for thread scrape…`);
+  triggerClick(link);
+  const navigated = await waitForUrl(/messaging\/thread\//i, THREAD_NAV_TIMEOUT_MS);
+  if (!navigated) {
+    return {
+      success: false,
+      error: 'Click did not navigate to a thread URL. Try clicking manually first.',
+    };
+  }
+  // LinkedIn virtualises the message list - give it a beat to render.
+  await sleep(1500);
+
+  const thread = scrapeThreadMessages();
+  if (!thread.success) {
+    return { success: false, error: thread.error ?? 'Thread scrape failed.' };
+  }
+  return {
+    success: true,
+    threadId: thread.threadId,
+    messages: thread.messages,
+    count: thread.messages?.length,
+  } as ScrapeConversationsResponse;
+}
+
+/**
+ * Trigger a click that works with both native HTMLElement.click() and
+ * Ember's event-delegation model. LinkedIn's <div tabindex="0"> rows don't
+ * have an `href`, so we have to dispatch a real mouse-style click event.
+ */
+function triggerClick(el: HTMLElement): void {
+  el.click();
+  // Belt-and-braces: if the framework ignored the synthetic click, fire
+  // a bubbling MouseEvent too.
+  el.dispatchEvent(
+    new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    }),
+  );
 }
 
 console.log('[Content] LinkedIn AI GTM loaded on', window.location.href);

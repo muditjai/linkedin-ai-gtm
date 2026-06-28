@@ -76,13 +76,23 @@
     </section>
 
     <section id="messages-tab" class="tab-content">
-      <div class="mb-6">
-        <h2 class="mb-2 text-2xl font-semibold">Messages</h2>
-        <p class="text-gray-500">Click a conversation to view messages</p>
+      <div class="mb-6 flex items-start justify-between">
+        <div>
+          <h2 class="mb-2 text-2xl font-semibold">Messages</h2>
+          <p class="text-gray-500">Click a conversation in the list to load its messages.</p>
+        </div>
+        <button id="btnClearMessages" class="btn-secondary text-rose-600 border-rose-200 hover:bg-rose-50" title="Clear inbox list, thread messages, and all related state">
+          Clear all
+        </button>
       </div>
       <div class="flex gap-4" style="height: calc(100vh - 380px);">
         <div class="flex w-80 flex-col overflow-hidden rounded-xl bg-white shadow-card">
-          <div class="border-b border-gray-200 bg-gray-50 px-4 py-4 font-semibold">Conversations (<span id="convCount">0</span>)</div>
+          <div class="border-b border-gray-200 bg-gray-50 px-4 py-4 font-semibold flex items-center justify-between">
+            <span>Conversations (<span id="convCount">0</span>)</span>
+            <span id="loadingThread" class="hidden text-xs font-normal text-brand-600">
+              <span class="inline-block animate-pulse">●</span> loading thread...
+            </span>
+          </div>
           <div class="flex-1 overflow-y-auto" id="contactsList">
             <div class="empty-state"><p>No conversations</p><p class="mt-1 text-xs">Scrape from Dashboard</p></div>
           </div>

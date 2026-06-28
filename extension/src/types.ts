@@ -139,6 +139,12 @@ export interface PopupState {
   threadMessages: ConversationMessage[];
   /** LinkedIn URN of the thread that `threadMessages` came from. */
   activeThreadId: string | null;
+  /**
+   * Per-thread message cache, keyed by LinkedIn URN. Populated by SCRAPE_ALL
+   * and incrementally as the user opens different conversations in the
+   * Messages tab. Lets us re-render a thread without re-scraping it.
+   */
+  threads: Record<string, ConversationMessage[]>;
   sequencer: Sequencer | null;
   dashboard: Dashboard | null;
   activeConversation: Conversation | null;

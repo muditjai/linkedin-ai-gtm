@@ -40,6 +40,7 @@ async function init(): Promise<void> {
     conversations: [],
     threadMessages: [],
     activeThreadId: null,
+    threads: {},
     sequencer: null,
     dashboard: null,
     activeConversation: null,

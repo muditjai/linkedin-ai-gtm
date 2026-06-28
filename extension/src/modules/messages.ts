@@ -8,7 +8,17 @@
  * unexpectedly-formatted profile data.
  */
 
-import type { Conversation } from '../types.js';
+import type { Conversation, ConversationMessage, ExtensionResponse } from '../types.js';
+
+/**
+ * Show or hide the small "loading thread..." indicator in the contacts
+ * sidebar header. Used while a contact-list click is fetching the thread.
+ */
+function setLoadingThread(loading: boolean): void {
+  const el = document.getElementById('loadingThread');
+  if (!el) return;
+  el.classList.toggle('hidden', !loading);
+}
 
 /**
  * Load conversations from the background service worker and render them.
@@ -75,7 +85,115 @@ export function renderContacts(): void {
 }
 
 /**
- * Select and display a conversation in the right-hand thread pane.
+ * Render the bubble list for a previously-scraped thread. Mirrors the
+ * chat-bubble rendering in `modules/buttons.ts`.
+ */
+function renderThreadMessages(
+  view: HTMLElement,
+  messages: ConversationMessage[],
+  threadId: string | null,
+  conv: Conversation,
+): void {
+  view.replaceChildren();
+
+  const header = document.createElement('div');
+  header.className = 'conversation-header';
+
+  const headerAvatar = document.createElement('div');
+  headerAvatar.className = 'contact-avatar';
+  headerAvatar.textContent = getInitials(conv.name);
+  header.appendChild(headerAvatar);
+
+  const info = document.createElement('div');
+  info.className = 'contact-info';
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'contact-name';
+  nameEl.textContent = conv.name;
+  info.appendChild(nameEl);
+
+  if (threadId) {
+    const threadEl = document.createElement('div');
+    threadEl.className = 'conversation-time';
+    threadEl.textContent = `Thread ${threadId.slice(0, 16)}…`;
+    info.appendChild(threadEl);
+  }
+
+  header.appendChild(info);
+  view.appendChild(header);
+
+  const list = document.createElement('div');
+  list.className = 'flex flex-col gap-3';
+
+  let lastDay: string | null = null;
+  messages.forEach((msg, idx) => {
+    if (msg.dateHeading && msg.dateHeading !== lastDay) {
+      const divider = document.createElement('div');
+      divider.className =
+        'my-2 flex items-center justify-center text-xs font-semibold uppercase tracking-wide text-gray-400';
+      divider.textContent = msg.dateHeading;
+      list.appendChild(divider);
+      lastDay = msg.dateHeading;
+    }
+    list.appendChild(renderMessageBubble(msg, idx === messages.length - 1));
+  });
+
+  view.appendChild(list);
+  view.scrollTop = view.scrollHeight;
+}
+
+function renderMessageBubble(
+  msg: ConversationMessage,
+  isLast: boolean,
+): HTMLElement {
+  const wrapper = document.createElement('div');
+  const isOutbound = msg.direction === 'outbound';
+  wrapper.className = [
+    'flex flex-col gap-1',
+    isOutbound ? 'items-end' : 'items-start',
+  ].join(' ');
+
+  const meta = document.createElement('div');
+  meta.className = 'flex items-center gap-2 text-xs text-gray-500';
+  const sender = document.createElement('span');
+  sender.className = 'font-semibold text-gray-700';
+  sender.textContent = msg.senderName;
+  const time = document.createElement('span');
+  time.textContent = msg.timestamp;
+  meta.appendChild(sender);
+  meta.appendChild(time);
+  if (msg.edited) {
+    const edited = document.createElement('span');
+    edited.className = 'italic';
+    edited.textContent = '(edited)';
+    meta.appendChild(edited);
+  }
+  if (msg.reactions.length > 0) {
+    const reactions = document.createElement('span');
+    reactions.textContent = ` ${msg.reactions.join(' ')}`;
+    meta.appendChild(reactions);
+  }
+  wrapper.appendChild(meta);
+
+  const bubble = document.createElement('div');
+  bubble.className = [
+    'max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm leading-relaxed',
+    isOutbound
+      ? 'rounded-br-sm bg-brand-600 text-white'
+      : 'rounded-bl-sm bg-gray-100 text-gray-900',
+    isLast && msg.needsReply ? 'ring-2 ring-amber-400' : '',
+  ].join(' ');
+  bubble.textContent = msg.content;
+  wrapper.appendChild(bubble);
+
+  return wrapper;
+}
+
+/**
+ * Select a conversation: paint the cached preview immediately, then fire
+ * SCRAPE_THREAD_BY_INDEX so the content script clicks that conversation in
+ * the LinkedIn inbox sidebar, waits for the thread to load, and pushes
+ * the full message list back via the response.
  */
 export function selectConversation(index: number): void {
   const state = window.popupState;
@@ -90,8 +208,9 @@ export function selectConversation(index: number): void {
 
   const view = document.getElementById('conversationView');
   if (!view) return;
-  view.replaceChildren();
 
+  // 1) Paint the cached preview right away so the UI never goes blank.
+  view.replaceChildren();
   const header = document.createElement('div');
   header.className = 'conversation-header';
 
@@ -123,8 +242,44 @@ export function selectConversation(index: number): void {
   preview.className = 'message-preview';
   preview.textContent = conv.preview || 'No messages yet';
   messages.appendChild(preview);
-
   view.appendChild(messages);
+
+  // 2) Trigger a thread scrape in the background. The content script
+  //    will click the conversation in LinkedIn's own UI, wait for the
+  //    thread to render, scrape it, and send the messages back.
+  setLoadingThread(true);
+  void (async () => {
+    try {
+      const response = (await chrome.runtime.sendMessage({
+        type: 'SCRAPE_THREAD_BY_INDEX',
+        index,
+      } as unknown as Record<string, unknown>)) as ExtensionResponse<{
+        threadId: string | null;
+        messages: ConversationMessage[];
+      }>;
+
+      if (response.success && response.data?.messages) {
+        const { threadId, messages: threadMessages } = response.data;
+        // Cache so a later re-select is instant.
+        if (threadId) {
+          state.threads = state.threads ?? {};
+          state.threads[threadId] = threadMessages;
+        }
+        state.threadMessages = threadMessages;
+        state.activeThreadId = threadId ?? null;
+        renderThreadMessages(view, threadMessages, threadId ?? null, conv);
+      } else {
+        console.warn(
+          '[Messages] Thread-by-index scrape failed:',
+          response.error ?? 'no messages in response',
+        );
+      }
+    } catch (err) {
+      console.error('[Messages] SCRAPE_THREAD_BY_INDEX error:', err);
+    } finally {
+      setLoadingThread(false);
+    }
+  })();
 }
 
 /**
