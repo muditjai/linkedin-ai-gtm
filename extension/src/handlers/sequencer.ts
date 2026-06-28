@@ -11,7 +11,7 @@ import { getDefaultSequencer } from '../utils/sequencer.js';
  */
 export async function handleSequencer(
   message: ExtensionMessage,
-  sender: chrome.runtime.MessageSender
+  _sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
   try {
     switch (message.type) {

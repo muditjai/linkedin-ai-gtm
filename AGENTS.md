@@ -7,11 +7,12 @@
 - Stop adding any bugs as they waste a lot of time. reason properly and deeply about the potential errors before making changes
 - After making any significant change, always submit to git.
 - Keep code modular - split large files into smaller, focused modules
-- Don't create super long files - if a file exceeds ~300 lines, consider splitting it
+- Don't create super long files - if a file exceeds ~500 lines, consider splitting it
 - Write test cases for new functionality where appropriate
 - Use descriptive naming conventions aligned with the existing codebase
 - When implementing features, ensure they are properly validated
 - Always prefer typed languages eg ts over js and python type annotations wherever available and possible.
+- When i say submit the code, it always means commit and push.
 
 ## Problem Statement
 
@@ -20,7 +21,7 @@ Build a Chrome extension with AI-powered outreach capabilities for LinkedIn. The
 ## Architecture and Infrastructure
 
 ### Core stack
-- **Frontend:** Chrome extension
+- **Frontend:** Chrome extension. This should open as a full page and not as a popup. 
 - **Service Backend:** Containerized service layer for frontend requests and business logic
 - **Agent Backend:** LangGraph-based agent backend
 - **Hosting:** DigitalOcean

@@ -1,144 +1,123 @@
 # LinkedIn AI GTM - Chrome Extension
 
-AI-powered outreach capabilities for LinkedIn - automate messaging, analyze conversations, and orchestrate outreach campaigns.
+AI-powered outreach capabilities for LinkedIn — automate messaging, analyze
+conversations, and orchestrate outreach campaigns.
+
+> Per `AGENTS.md`, the extension opens as a **full page** (not a popup).
+> Clicking the toolbar icon opens `fullpage.html` in a dedicated window.
 
 ## Features
 
-- **Dashboard** - Overview of conversations, messages to reply, sent/received counts, and outcomes
-- **Messages** - Inbox-style view of ongoing conversations
-- **Sequencer** - Visual canvas for defining outreach sequences with delays and AI-generated messages
-- **Scraping** - Extract conversations from LinkedIn messages page
+- **Dashboard** — overview of conversations, messages to reply, sent/received
+  counts, outcomes, last-scrape status, and a configurable scrape button.
+- **Messages** — inbox-style view with a left-side contact list and a
+  right-side conversation thread.
+- **Sequencer** — visual canvas for defining outreach sequences with delays,
+  fixed messages, and AI-generated prompts. Supports `{{name}}` style
+  placeholders.
+- **Scraping** — extracts the conversation list from `linkedin.com/messaging`
+  via a registered content script.
 
-## Installation on Brave Browser
+## Installation (Chrome / Brave)
 
 ### Prerequisites
 
-- [Brave Browser](https://brave.com/) installed
+- Chrome / Brave (or any Manifest V3-compatible browser)
 - Node.js 18+ for building
 
-### Build and Load
+### Build & load
 
-1. Navigate to extension directory:
-   ```bash
-   cd extension
-   ```
+```bash
+cd extension
+npm install
+npm run build
+```
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+The build writes TypeScript output into `extension/dist/`. Copy the static
+HTML into place and copy the manifest:
 
-3. Build the extension:
-   ```bash
-   npm run build
-   ```
+```bash
+cp extension/src/fullpage.html extension/dist/
+cp extension/manifest.json extension/dist/
+```
 
-4. Copy static files to dist:
-   ```bash
-   cp manifest.json popup.html popup.css dist/
-   cp src/content/styles.css dist/content/
-   ```
+Then load `extension/dist/` as an unpacked extension:
 
-5. Update manifest paths (the build doesn't do this automatically):
-   ```bash
-   # Edit dist/manifest.json to change:
-   # "service_worker": "src/background.ts" -> "service_worker": "background.js"
-   # "js": ["src/content/main.ts"] -> "js": ["content/main.js"]
-   # "css": ["src/content/styles.css"] -> "css": ["content/styles.css"]
-   ```
-
-6. Update popup.html script src:
-   ```bash
-   sed -i 's|src/popup.ts|popup.js|g' dist/popup.html
-   ```
-
-7. Open **Brave Browser** and navigate to:
-   ```
-   brave://extensions
-   ```
-
-8. Enable **Developer mode** (toggle in top-right corner)
-
-9. Click **Load unpacked**
-
-10. Select the `extension/dist` folder
-
-11. The extension icon will appear in your browser toolbar
-
-### Development Mode (Auto-Reload)
-
-For continuous development:
-
-1. Build with watch mode:
-   ```bash
-   npm run watch
-   ```
-
-2. In Brave, click the **Reload** button on the extension card after making changes
+1. Open `chrome://extensions` (or `brave://extensions`).
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and select `extension/dist/`.
 
 ## Project Structure
 
 ```
 extension/
-├── src/                       # TypeScript source
-│   ├── background.ts           # Background service worker
-│   ├── popup.ts               # Main popup controller
-│   ├── types.ts              # Type definitions
-│   ├── content/              # Content scripts
-│   │   ├── main.ts
+├── src/
+│   ├── background.ts       # Service worker — opens fullpage.html on icon click,
+│   │                       #   routes runtime messages to handlers.
+│   ├── fullpage.html       # Full-page UI shell.
+│   ├── fullpage.ts         # Full-page UI controller.
+│   ├── manifest.json       # (dev convenience — the canonical one is at root)
+│   ├── types.ts            # Shared TypeScript types.
+│   ├── content/
+│   │   ├── main.ts         # Injected into LinkedIn messaging pages.
 │   │   └── styles.css
-│   ├── handlers/             # Message handlers
+│   ├── handlers/           # Pure message handlers (background-side).
+│   │   ├── analysis.ts
 │   │   ├── conversations.ts
-│   │   ├── sequencer.ts
 │   │   ├── dashboard.ts
-│   │   └── analysis.ts
-│   ├── modules/              # Popup UI modules
-│   │   ├── tabs.ts
+│   │   └── sequencer.ts
+│   ├── modules/            # Full-page UI modules.
 │   │   ├── buttons.ts
 │   │   ├── dashboard.ts
+│   │   ├── messages.ts
 │   │   ├── sequencer.ts
-│   │   └── messages.ts
-│   └── utils/               # Utilities
-│       └── sequencer.ts
-├── dist/                     # Compiled output (after build)
-├── manifest.json              # Extension manifest
-├── popup.html               # Popup UI
-├── popup.css                # Popup styles
-├── package.json             # Dependencies
-└── tsconfig.json           # TypeScript config
+│   │   └── tabs.ts
+│   └── utils/
+│       └── sequencer.ts    # Default sequencer + {{var}} template renderer.
+├── manifest.json           # Chrome extension manifest (manifest v3).
+├── tsconfig.json
+└── package.json
 ```
 
 ## Available Scripts
 
 ```bash
-npm run build    # Build TypeScript to JavaScript
-npm run watch   # Watch mode for development
+npm run build    # Compile TypeScript → dist/
+npm run watch    # Continuous compilation for development
 ```
+
+## Configuration
+
+Copy `.env.local.example` to `.env.local` (which is gitignored) and fill in
+your secrets. The values are consumed by Phase 2 / Phase 3 work — the
+current Phase 1 extension stores everything locally via `chrome.storage`.
+
+| Variable             | Purpose                                            |
+| -------------------- | -------------------------------------------------- |
+| `GEMINI_API_KEY`     | Gemini 3.5 key for message analysis (Phase 3).    |
+| `DO_GENERATION_MODEL`| Model name on the DigitalOcean inference endpoint. |
+| `DO_INFERENCE_URL`   | Override for the inference endpoint URL.           |
+| `DO_INFERENCE_TOKEN` | Bearer token for the inference endpoint.           |
+| `MONGODB_URI`        | Connection string for the service backend.         |
 
 ## Usage
 
-1. Click the extension icon in the browser toolbar
-2. Go to **Dashboard** and click "Scrape Conversations" (while on LinkedIn)
-3. View scraped conversations in **Messages** tab
-4. Create outreach sequences in **Sequencer** tab
-5. Execute sequences to automate outreach
+1. Click the extension icon in the toolbar — the full app opens in a window.
+2. Visit `https://www.linkedin.com/messaging/`.
+3. In the **Dashboard** tab, set the desired scrape count and click **Scrape
+   Conversations**.
+4. View scraped conversations in the **Messages** tab.
+5. Edit and save your outreach sequence in the **Sequencer** tab.
 
 ## Troubleshooting
 
-**Extension not loading?**
-
-- Check for errors in `brave://extensions`
-- Open DevTools on extension popup (right-click > Inspect)
-- Check console for errors
-
-**Scraping not working?**
-
-- Ensure you're on LinkedIn messages page: `https://www.linkedin.com/messaging/`
-- LinkedIn may have updated DOM - check selector names in content script
-
-**Storage issues?**
-
-- Extension storage is isolated - data won't persist across uninstalls
+- **Nothing happens when you click the icon** — verify `background.js` is
+  loaded as a service worker (check `chrome://extensions` → Service Worker
+  link).
+- **Scraping reports "No LinkedIn tab found"** — open a LinkedIn messaging
+  tab and try again.
+- **Module not found at runtime** — ensure you copied `fullpage.html` into
+  `dist/` after building.
 
 ## License
 

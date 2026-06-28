@@ -1,190 +1,206 @@
 /**
  * Buttons Module
- * Handles button click events
+ * Wires up the click handlers used by the full-page UI.
+ *
+ * Element IDs referenced here must match those in `fullpage.html`.
  */
 
-import type { ExtensionMessage, Sequencer } from '../types.js';
+import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
 import { loadDashboard } from './dashboard.js';
-import { loadSequencer, renderSequencer } from './sequencer.js';
-import { loadConversations, renderContacts } from './messages.js';
+import { renderSequencer } from './sequencer.js';
+import { renderContacts } from './messages.js';
+
+const DEFAULT_SCRAPE_LIMIT = 20;
+const SCRAPE_LIMIT_MIN = 1;
+const SCRAPE_LIMIT_MAX = 100;
 
 /**
- * Setup button event listeners
+ * Attach click handlers to the action buttons.
  */
 export function setupButtons(): void {
   console.log('[Buttons] Setting up button listeners');
-  
-  const scrapeBtn = document.getElementById('btnScrape');
-  if (scrapeBtn) {
-    scrapeBtn.addEventListener('click', () => {
-      console.log('[Buttons] Scrape button clicked');
-      scrapeConversations();
-    });
-  }
 
-  const saveBtn = document.getElementById('btnSaveSequencer');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', () => {
-      console.log('[Buttons] Save button clicked');
-      saveSequencer();
-    });
-  }
-
-  const executeBtn = document.getElementById('btnExecute');
-  if (executeBtn) {
-    executeBtn.addEventListener('click', () => {
-      console.log('[Buttons] Execute button clicked');
-      executeSequence();
-    });
-  }
-
-  const addStepBtn = document.getElementById('btnAddStep');
-  if (addStepBtn) {
-    addStepBtn.addEventListener('click', () => {
-      console.log('[Buttons] Add step button clicked');
-      addSequencerStep();
-    });
-  }
-
-  const openFullApp = document.getElementById('openFullApp');
-  if (openFullApp) {
-    openFullApp.addEventListener('click', (e) => {
-      e.preventDefault();
-      console.log('[Buttons] Open full app clicked');
-      openFullAppPage();
-    });
-  }
+  onClick('btnScrape', () => {
+    void scrapeConversations();
+  });
+  onClick('btnSaveSequencer', () => {
+    void saveSequencer();
+  });
+  onClick('btnExecute', () => {
+    void executeSequence();
+  });
+  onClick('btnAddStep', () => {
+    addSequencerStep();
+  });
 
   console.log('[Buttons] Button listeners set up');
 }
 
 /**
- * Scrape conversations from LinkedIn
+ * Helper that safely attaches a click handler if the element exists.
+ */
+function onClick(id: string, handler: () => void): void {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('click', () => {
+    console.log('[Buttons]', id, 'clicked');
+    handler();
+  });
+}
+
+/**
+ * Scrape conversations from the active LinkedIn messaging tab.
+ *
+ * Reads the requested count from `#scrapeCount` if available, otherwise
+ * falls back to the default.
  */
 async function scrapeConversations(): Promise<void> {
   const btn = document.getElementById('btnScrape') as HTMLButtonElement | null;
-  if (!btn) {
-    console.error('[Buttons] Scrape button not found');
-    return;
-  }
+  if (!btn) return;
 
   btn.disabled = true;
+  const originalText = btn.textContent ?? 'Scrape Conversations';
   btn.textContent = 'Scraping...';
-  console.log('[Buttons] Starting scrape...');
+  setStatus('Scraping...', 'active');
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const limit = readScrapeLimit();
+    const response = (await chrome.runtime.sendMessage({
       type: 'SCRAPE_CONVERSATIONS',
-      limit: 20
-    } as ExtensionMessage);
-
-    console.log('[Buttons] Scrape response:', response);
+      limit,
+    } as ExtensionMessage)) as ExtensionResponse;
 
     if (response.success) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const convs: any = (response as any).conversations || [];
-      window.popupState.conversations = convs;
+      window.popupState.conversations = (response.data as Conversation[]) ?? [];
       renderContacts();
       await loadDashboard();
-      alert('Scraped ' + window.popupState.conversations.length + ' conversations!');
+      setStatus(`Scraped ${window.popupState.conversations.length} conversations`, 'active');
+      updateConversationCount();
     } else {
-      alert('Error: ' + (response as { error: string }).error);
+      console.error('[Buttons] Scrape failed:', response.error);
+      setStatus(`Scrape failed: ${response.error ?? 'unknown'}`, 'error');
     }
   } catch (error) {
     console.error('[Buttons] Error scraping:', error);
-    alert('Failed to scrape. Make sure you are on LinkedIn.');
+    setStatus('Scrape failed. Are you on LinkedIn?', 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Scrape Conversations';
+    btn.textContent = originalText;
   }
 }
 
 /**
- * Save sequencer
+ * Save the current sequencer (after reading the user's name from the input).
  */
 async function saveSequencer(): Promise<void> {
   const nameInput = document.getElementById('sequencerName') as HTMLInputElement | null;
-  if (!nameInput) {
-    console.error('[Buttons] Sequencer name input not found');
+  if (!nameInput) return;
+
+  const sequencer = window.popupState.sequencer;
+  if (!sequencer) {
+    setStatus('No sequencer loaded', 'error');
     return;
   }
 
-  if (!window.popupState.sequencer) {
-    console.error('[Buttons] No sequencer loaded');
-    alert('No sequencer loaded');
-    return;
-  }
-
-  window.popupState.sequencer.name = nameInput.value;
-  console.log('[Buttons] Saving sequencer:', window.popupState.sequencer.name);
+  sequencer.name = nameInput.value;
+  setStatus('Saving sequencer...', 'active');
 
   try {
-    await chrome.runtime.sendMessage({
+    const response = (await chrome.runtime.sendMessage({
       type: 'SAVE_SEQUENCER',
-      sequencer: window.popupState.sequencer
-    } as ExtensionMessage);
-    alert('Sequencer saved!');
+      sequencer,
+    } as ExtensionMessage)) as ExtensionResponse;
+
+    if (response.success) {
+      setStatus('Sequencer saved', 'active');
+    } else {
+      setStatus(`Save failed: ${response.error ?? 'unknown'}`, 'error');
+    }
   } catch (error) {
     console.error('[Buttons] Error saving sequencer:', error);
-    alert('Failed to save sequencer');
+    setStatus('Failed to save sequencer', 'error');
   }
 }
 
 /**
- * Add new sequencer step
+ * Append a new default message step to the in-memory sequencer and re-render.
  */
 function addSequencerStep(): void {
-  console.log('[Buttons] Adding new step');
-  
-  if (!window.popupState.sequencer) {
-    console.error('[Buttons] No sequencer loaded');
+  const sequencer = window.popupState.sequencer;
+  if (!sequencer) {
+    setStatus('No sequencer loaded', 'error');
     return;
   }
-  
-  const newStep = {
+
+  sequencer.steps.push({
     id: `step_${Date.now()}`,
-    type: 'message' as const,
+    type: 'message',
     content: 'New message step...',
-    next: null
-  };
-  window.popupState.sequencer.steps.push(newStep);
-  renderSequencer(window.popupState.sequencer);
+    next: null,
+  });
+  renderSequencer(sequencer);
+  setStatus(`Step ${sequencer.steps.length} added`, 'active');
 }
 
 /**
- * Execute sequence
+ * Trigger sequence execution.
+ *
+ * NOTE: This is a stub until Phase 2 (service backend) is implemented. We
+ * surface the placeholder message in the header instead of a modal alert.
  */
 async function executeSequence(): Promise<void> {
   const btn = document.getElementById('btnExecute') as HTMLButtonElement | null;
   if (!btn) return;
 
   btn.disabled = true;
+  const originalText = btn.textContent ?? 'Execute';
   btn.textContent = 'Executing...';
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = (await chrome.runtime.sendMessage({
       type: 'EXECUTE_SEQUENCE',
-      sequencer: window.popupState.sequencer
-    } as ExtensionMessage);
-    alert((response as { message: string }).message || 'Sequence executed!');
+      sequencer: window.popupState.sequencer,
+    } as ExtensionMessage)) as ExtensionResponse;
+    setStatus(response.message ?? 'Sequence executed', response.success ? 'active' : 'error');
   } catch (error) {
     console.error('[Buttons] Error executing sequence:', error);
+    setStatus('Execution failed', 'error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Execute Sequence';
+    btn.textContent = originalText;
   }
 }
 
 /**
- * Open full app page
+ * Read the user's requested scrape limit from `#scrapeCount`, clamped to
+ * a sane range.
  */
-async function openFullAppPage(): Promise<void> {
-  console.log('[Buttons] Opening full app page');
-  try {
-    await chrome.runtime.sendMessage({
-      type: 'OPEN_FULL_APP'
-    } as ExtensionMessage);
-  } catch (error) {
-    console.error('[Buttons] Error opening full app:', error);
+function readScrapeLimit(): number {
+  const input = document.getElementById('scrapeCount') as HTMLInputElement | null;
+  if (!input) return DEFAULT_SCRAPE_LIMIT;
+  const raw = parseInt(input.value, 10);
+  if (Number.isNaN(raw)) return DEFAULT_SCRAPE_LIMIT;
+  return Math.min(SCRAPE_LIMIT_MAX, Math.max(SCRAPE_LIMIT_MIN, raw));
+}
+
+/**
+ * Update the sidebar conversation counter.
+ */
+function updateConversationCount(): void {
+  const badge = document.getElementById('convCount');
+  if (badge) {
+    badge.textContent = String(window.popupState.conversations.length);
   }
+}
+
+/**
+ * Update the header status indicator if `window.setExtensionStatus` is
+ * available (it is, once `fullpage.ts` has finished initialising).
+ */
+function setStatus(text: string, kind: 'active' | 'error' | 'idle' = 'active'): void {
+  if (typeof window.setExtensionStatus === 'function') {
+    window.setExtensionStatus(text, kind);
+    return;
+  }
+  console.log(`[Buttons][${kind}] ${text}`);
 }

@@ -6,10 +6,10 @@ import type { ExtensionMessage, ExtensionResponse, Conversation } from '../types
 
 export async function handleConversations(
   message: ExtensionMessage,
-  sender: chrome.runtime.MessageSender
+  _sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
   console.log('[Conversations] Handling:', message.type);
-  
+
   switch (message.type) {
     case 'GET_CONVERSATIONS':
       return await getConversations();

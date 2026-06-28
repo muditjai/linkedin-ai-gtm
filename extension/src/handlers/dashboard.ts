@@ -9,7 +9,7 @@ import type { ExtensionMessage, ExtensionResponse, Dashboard, ConversationMessag
  * Handle dashboard operations
  */
 export async function handleDashboard(
-  message: ExtensionMessage,
+  _message: ExtensionMessage,
   _sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
   try {

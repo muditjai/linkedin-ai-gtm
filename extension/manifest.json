@@ -18,5 +18,29 @@
   },
   "action": {
     "default_title": "LinkedIn AI GTM"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.linkedin.com/messaging/*"
+      ],
+      "js": [
+        "content/main.js"
+      ],
+      "css": [
+        "content/styles.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "fullpage.html"
+      ],
+      "matches": [
+        "*://*.linkedin.com/*"
+      ]
+    }
+  ]
 }

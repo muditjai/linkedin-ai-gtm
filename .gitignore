@@ -3,14 +3,19 @@
 .env.local
 .env.*
 !.env.example
+!.env.local.example
 
 # Local skill installation artifacts
 .agents/
 skills-lock.json
 
-# Extension build output
+# Extension build output and stale compiled artefacts
 extension/dist/
 extension/node_modules/
+# Top-level compiled .js files were an older build layout. The current
+# build writes into extension/dist/ — these should never be committed again.
+extension/*.js
+!extension/*.json
 
 # IDE
 .vscode/
