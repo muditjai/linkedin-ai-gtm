@@ -366,17 +366,15 @@ async function scrapeAll(
   threadsScraped: number;
   scrollIterations: number;
 }>> {
-  const limit = message.limit ?? 200;
-  // The user-facing "Max threads" input drives BOTH the inbox cap and the
-  // per-thread click-through cap, so we MUST forward both. The previous
-  // version dropped `threadLimit` on the floor here, which caused the
-  // "asked for 5, got 61" + "0 threads" regression.
-  const threadLimit = message.threadLimit ?? limit;
+  // The user-facing "Max conversations" input is the canonical cap. It
+  // drives BOTH the inbox row count AND the number of conversations the
+  // scraper clicks through to read their full message history (thread).
+  // Fall back to `limit` for legacy callers; the content script treats
+  // both as the same cap.
+  const conversationLimit = message.conversationLimit ?? message.limit ?? 20;
   console.log(
-    '[Conversations] Scrape-all (limit=',
-    limit,
-    ', threadLimit=',
-    threadLimit,
+    '[Conversations] Scrape-all (conversationLimit=',
+    conversationLimit,
     ')',
   );
 
@@ -415,10 +413,10 @@ async function scrapeAll(
     }
   }
 
-  let response = await trySendScrapeAll(linkedInTab.id, limit, threadLimit);
+  let response = await trySendScrapeAll(linkedInTab.id, conversationLimit);
   if (!response) {
     await sleep(SECOND_RETRY_DELAY_MS);
-    response = await trySendScrapeAll(linkedInTab.id, limit, threadLimit);
+    response = await trySendScrapeAll(linkedInTab.id, conversationLimit);
   }
 
   if (!response) {
@@ -471,21 +469,20 @@ async function scrapeAll(
   };
 }
 
+/**
+ * Forward a SCRAPE_ALL message to the content script with the
+ * `conversationLimit` cap. The content script uses this single value to
+ * cap BOTH the inbox row count and the per-conversation click-through.
+ */
 async function trySendScrapeAll(
   tabId: number,
-  limit: number,
-  threadLimit: number,
+  conversationLimit: number,
 ): Promise<ScrapeAllPayload | null> {
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
     try {
-      // Forward BOTH `limit` and `threadLimit`. The content script uses
-      // `threadLimit` to cap both the inbox scrape and the per-thread
-      // click-through; dropping it here caused the
-      // "asked for 5, got 61 / 0 threads" regression.
       const response = await chrome.tabs.sendMessage(tabId, {
         type: 'SCRAPE_ALL',
-        limit,
-        threadLimit,
+        conversationLimit,
       });
       if (response) return response as ScrapeAllPayload;
       console.warn(`[Conversations] SCRAPE_ALL returned empty (attempt ${attempt})`);

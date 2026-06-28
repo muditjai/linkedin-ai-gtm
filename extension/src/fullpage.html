@@ -57,12 +57,12 @@
       <div class="rounded-xl bg-white p-6 shadow-card">
         <h3 class="mb-4 text-base font-semibold">Scrape</h3>
         <div class="mb-4 flex flex-wrap items-center gap-3">
-          <input type="number" id="threadLimit" class="input w-32" value="5" min="0" max="20" placeholder="Max threads" title="How many conversation threads to open and scrape (in addition to the inbox list)">
+          <input type="number" id="conversationLimit" class="input w-32" value="5" min="0" max="20" placeholder="Max conversations" title="How many inbox conversations to keep AND open to scrape their full message history (thread)">
           <button id="btnScrapeAll" class="btn-primary">Scrape All</button>
           <button id="btnTestConnection" class="btn-secondary">Test Connection</button>
         </div>
         <p class="mb-4 text-xs text-amber-700">
-          ⚠ Scraping threads clicks through each conversation in your inbox. Aggressive use may trigger LinkedIn rate limiting. The default cap is 5 threads / 2&nbsp;s apart. If you scrape many threads in a short window, LinkedIn may flag the session.
+          ⚠ Scraping conversations clicks through each entry in your inbox to read its full message history (the thread). Aggressive use may trigger LinkedIn rate limiting. The default cap is 5 conversations / 2&nbsp;s apart. If you scrape many conversations in a short window, LinkedIn may flag the session.
         </p>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
           <div class="flex justify-between"><span>Last scrape:</span><span id="lastScrapeTime">Never</span></div>

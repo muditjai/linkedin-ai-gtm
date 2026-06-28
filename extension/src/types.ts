@@ -21,9 +21,21 @@ export type MessageType =
 
 export interface ExtensionMessage {
   type: MessageType;
+  /**
+   * General-purpose cap for inbox-only scrapes (`SCRAPE_CONVERSATIONS`)
+   * and thread-message scrapes (`SCRAPE_THREAD`).
+   */
   limit?: number;
-  /** Cap on how many conversation threads the scraper will click through. */
-  threadLimit?: number;
+  /**
+   * Cap on how many inbox conversations to keep / click through.
+   *
+   * Note: the same value caps BOTH the inbox row count and the number of
+   * conversations the scraper opens to scrape. The user-facing input is
+   * labelled "Max conversations" - "thread" in the UI now refers to the
+   * per-conversation message history (right-hand pane), not the
+   * inbox-side click count.
+   */
+  conversationLimit?: number;
   sequencer?: Sequencer;
   conversationId?: string;
 }

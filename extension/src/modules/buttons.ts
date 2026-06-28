@@ -17,9 +17,9 @@ import { loadDashboard } from './dashboard.js';
 import { renderSequencer } from './sequencer.js';
 import { renderContacts } from './messages.js';
 
-const DEFAULT_THREAD_LIMIT = 5;
-const THREAD_LIMIT_MIN = 0;
-const THREAD_LIMIT_MAX = 20;
+const DEFAULT_CONVERSATION_LIMIT = 5;
+const CONVERSATION_LIMIT_MIN = 0;
+const CONVERSATION_LIMIT_MAX = 20;
 
 interface ScrapeAllData {
   conversations: Conversation[];
@@ -83,23 +83,21 @@ async function scrapeAll(): Promise<void> {
   btn.disabled = true;
   const originalText = btn.textContent ?? 'Scrape All';
   btn.textContent = 'Scraping…';
-  const threadLimit = readThreadLimit();
+  const conversationLimit = readConversationLimit();
   logStatus(
-    `Scrape All requested (max ${threadLimit} thread${threadLimit === 1 ? '' : 's'})…`,
+    `Scrape All requested (max ${conversationLimit} conversation${conversationLimit === 1 ? '' : 's'})…`,
     'info',
   );
 
   try {
-    // The "Max threads" input in the dashboard controls BOTH:
-    //   1. how many inbox rows we keep (cap = threadLimit)
-    //   2. how many conversation threads we click through (cap = threadLimit)
-    // Sending `threadLimit` as both `limit` and `threadLimit` keeps the
-    // expectation "type 5 -> get 5 of everything" true regardless of which
-    // inbox field used to be `scrapeCount`.
+    // The "Max conversations" input in the dashboard controls BOTH:
+    //   1. how many inbox rows we keep (cap = conversationLimit)
+    //   2. how many conversations we click through to scrape their
+    //      full message thread (right-hand pane).
+    // Sending the value as `conversationLimit` is the canonical name.
     const response = (await chrome.runtime.sendMessage({
       type: 'SCRAPE_ALL',
-      limit: threadLimit,
-      threadLimit,
+      conversationLimit,
     } as ExtensionMessage)) as ExtensionResponse<ScrapeAllData> & {
       threads?: Record<string, ConversationMessage[]>;
       threadsScraped?: number;
@@ -420,15 +418,18 @@ function updateConversationCount(): void {
 }
 
 /**
- * Read the user's "max threads to click through" from `#threadLimit`,
+ * Read the user's "Max conversations" value from `#conversationLimit`,
  * clamped to [0, 20]. 0 disables thread scraping entirely.
+ *
+ * The cap drives BOTH the inbox row count AND the number of conversations
+ * the scraper clicks through to read their full message history.
  */
-function readThreadLimit(): number {
-  const input = document.getElementById('threadLimit') as HTMLInputElement | null;
-  if (!input) return DEFAULT_THREAD_LIMIT;
+function readConversationLimit(): number {
+  const input = document.getElementById('conversationLimit') as HTMLInputElement | null;
+  if (!input) return DEFAULT_CONVERSATION_LIMIT;
   const raw = parseInt(input.value, 10);
-  if (Number.isNaN(raw)) return DEFAULT_THREAD_LIMIT;
-  return Math.min(THREAD_LIMIT_MAX, Math.max(THREAD_LIMIT_MIN, raw));
+  if (Number.isNaN(raw)) return DEFAULT_CONVERSATION_LIMIT;
+  return Math.min(CONVERSATION_LIMIT_MAX, Math.max(CONVERSATION_LIMIT_MIN, raw));
 }
 
 /* -------------------------------------------------------------------------- *

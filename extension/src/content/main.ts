@@ -50,7 +50,13 @@ interface ConversationMessage {
 interface ExtensionMessage {
   type: string;
   limit?: number;
-  threadLimit?: number;
+  /**
+   * Cap on how many inbox conversations to keep / click through (set by
+   * the "Max conversations" UI input). Drives BOTH the inbox row count
+   * AND the per-conversation click-through, since each clicked
+   * conversation's full message thread is read.
+   */
+  conversationLimit?: number;
   [key: string]: unknown;
 }
 
@@ -148,11 +154,12 @@ function boot(): void {
     }
 
     if (message.type === 'SCRAPE_ALL') {
-      // The handler forwards BOTH `limit` and `threadLimit`, but they
-      // mean the same thing for the user: "first N of everything".
-      // We use whichever is present (preferring `threadLimit` if both
-      // arrive, since that is what the UI's "Max threads" input sends).
-      const incoming = (message as Record<string, unknown>).threadLimit;
+      // The handler forwards `conversationLimit` (the user-facing "Max
+      // conversations" cap). The same value caps BOTH the inbox row count
+      // AND the number of conversations we click through to scrape their
+      // full message history (the "thread"). Fall back to `limit` for
+      // any older caller that still sends the legacy field.
+      const incoming = (message as Record<string, unknown>).conversationLimit;
       const cap = typeof incoming === 'number' && !Number.isNaN(incoming)
         ? incoming
         : clampLimit(message.limit);
@@ -188,7 +195,13 @@ function clampLimit(raw: number | undefined): number {
   return Math.min(MAX_LIMIT, Math.max(1, raw));
 }
 
-function readThreadLimit(raw: number | undefined): number {
+/**
+ * Clamp a conversationLimit value (the "Max conversations" UI cap) to
+ * the [0, 20] range the click-through loop is willing to handle. Kept
+ * for parity with the page-side `readConversationLimit()` and for any
+ * legacy callers that send a raw value.
+ */
+function readConversationLimit(raw: number | undefined): number {
   if (raw === undefined || Number.isNaN(raw)) return 5;
   if (raw < 0) return 0;
   return Math.min(20, Math.floor(raw));
@@ -694,8 +707,11 @@ const THREAD_NAV_TIMEOUT_MS = 8000;
 /**
  * Combined scrape: auto-scroll the inbox AND click through up to `cap`
  * conversations to scrape their full threads. A single `cap` is used for
- * BOTH the inbox row count and the per-thread click-through so the
- * user-facing input "Max threads: N" maps to "first N of everything".
+ * BOTH the inbox row count and the per-conversation click-through so the
+ * user-facing input "Max conversations: N" maps to "first N of everything".
+ *
+ * For each clicked conversation we extract the FULL message history
+ * (right-pane "thread") - there is no separate per-thread message cap.
  *
  * Returns:
  *   - `conversations`:  capped inbox rows (size <= `cap`)
