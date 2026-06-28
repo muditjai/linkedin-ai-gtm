@@ -122,24 +122,38 @@ function renderThreadMessages(
   header.appendChild(info);
   view.appendChild(header);
 
+  // Build the list inside a DocumentFragment so the browser only
+  // triggers one reflow when we mount it. Without this, each
+  // appendChild below forces a reflow and the render of a 25-message
+  // thread is visibly janky.
   const list = document.createElement('div');
   list.className = 'flex flex-col gap-3';
+  const fragment = document.createDocumentFragment();
 
   let lastDay: string | null = null;
-  messages.forEach((msg, idx) => {
+  for (let idx = 0; idx < messages.length; idx += 1) {
+    const msg = messages[idx];
     if (msg.dateHeading && msg.dateHeading !== lastDay) {
       const divider = document.createElement('div');
       divider.className =
         'my-2 flex items-center justify-center text-xs font-semibold uppercase tracking-wide text-gray-400';
       divider.textContent = msg.dateHeading;
-      list.appendChild(divider);
+      fragment.appendChild(divider);
       lastDay = msg.dateHeading;
     }
-    list.appendChild(renderMessageBubble(msg, idx === messages.length - 1));
-  });
+    fragment.appendChild(
+      renderMessageBubble(msg, idx === messages.length - 1),
+    );
+  }
+  list.appendChild(fragment);
 
   view.appendChild(list);
-  view.scrollTop = view.scrollHeight;
+  // Defer the scroll-to-bottom by a frame so the layout has settled
+  // and we don't trigger a forced reflow at the same time as the
+  // appendChild above.
+  requestAnimationFrame(() => {
+    view.scrollTop = view.scrollHeight;
+  });
 }
 
 function renderMessageBubble(
