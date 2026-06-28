@@ -57,6 +57,11 @@ let mounted = false;
 /**
  * Mount the side panel. Safe to call multiple times; subsequent calls
  * just refresh the contents.
+ *
+ * The `#sidePanel` element in `fullpage.html` ships with the `hidden`
+ * class so the page doesn't flash a half-rendered panel during init.
+ * Once we have content to show we strip that class so the panel
+ * actually appears in the messages tab.
  */
 export async function mountSidePanel(): Promise<void> {
   const root = document.getElementById('sidePanel');
@@ -66,6 +71,11 @@ export async function mountSidePanel(): Promise<void> {
   }
   mounted = true;
   await refreshThreadList();
+  // The first render() above populates the panel (with an empty-state
+  // message if the backend is unreachable). Now that we have DOM in
+  // place, drop the `hidden` class so the panel actually shows up.
+  // This is a no-op on subsequent calls.
+  root.classList.remove('hidden');
 }
 
 export function isSidePanelMounted(): boolean {
