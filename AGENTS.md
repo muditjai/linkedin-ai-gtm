@@ -11,6 +11,7 @@
 - Write test cases for new functionality where appropriate
 - Use descriptive naming conventions aligned with the existing codebase
 - When implementing features, ensure they are properly validated
+- Always prefer typed languages eg ts over js and python type annotations wherever available and possible.
 
 ## Problem Statement
 
