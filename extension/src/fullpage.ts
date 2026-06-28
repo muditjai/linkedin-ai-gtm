@@ -16,6 +16,20 @@ import { loadConversations, renderContacts } from './modules/messages.js';
 const SCRAPE_LIMIT_MIN = 1;
 const SCRAPE_LIMIT_MAX = 100;
 const SCRAPE_LIMIT_DEFAULT = 20;
+const MAX_LOG_ENTRIES = 200;
+
+type LogKind = 'info' | 'success' | 'error' | 'warn';
+
+interface LogEntry {
+  time: number;
+  kind: LogKind;
+  message: string;
+}
+
+const counters = {
+  scrapes: 0,
+  errors: 0,
+};
 
 /**
  * Bootstrap the full-page UI. Safe to call once `DOMContentLoaded` fires.
@@ -32,14 +46,91 @@ async function init(): Promise<void> {
 
   setupTabs();
   setupButtons();
+  wireLogControls();
+
+  logStatus('Full-page UI ready. Open linkedin.com/messaging to scrape.', 'info');
+  logStatus('Tip: stay on the messaging tab while scraping.', 'info');
 
   await Promise.all([loadDashboard(), loadSequencer(), loadConversations()]);
   updateConversationCount();
-  setStatus('Ready', 'active');
-
-  // Whenever the contacts list is rebuilt, keep the sidebar counter in sync.
   renderContacts();
+
   console.log('[FullPage] Initialized');
+}
+
+/**
+ * Append a line to the activity log at the bottom of the page. Exposed on
+ * `window` so other modules (e.g. `modules/buttons.ts`) can push messages
+ * without each having to find the DOM nodes themselves.
+ */
+function logStatus(message: string, kind: LogKind = 'info'): void {
+  const list = document.getElementById('statusLog');
+  if (!list) {
+    console.log(`[FullPage][${kind}] ${message}`);
+    return;
+  }
+
+  const entry: LogEntry = { time: Date.now(), kind, message };
+  appendLogEntry(list, entry);
+  updateCounters(kind);
+  list.scrollTop = list.scrollHeight;
+}
+
+function appendLogEntry(list: HTMLElement, entry: LogEntry): void {
+  const li = document.createElement('li');
+  li.className = `log-entry ${entry.kind}`;
+
+  const time = document.createElement('span');
+  time.className = 'log-time';
+  time.textContent = formatTime(entry.time);
+  li.appendChild(time);
+
+  const msg = document.createElement('span');
+  msg.className = 'log-msg';
+  msg.textContent = entry.message;
+  li.appendChild(msg);
+
+  list.appendChild(li);
+
+  // Trim the log so it does not grow unbounded.
+  while (list.children.length > MAX_LOG_ENTRIES) {
+    list.removeChild(list.firstChild as Node);
+  }
+}
+
+function updateCounters(kind: LogKind): void {
+  if (kind === 'error') {
+    counters.errors += 1;
+    const el = document.getElementById('counterErrors');
+    if (el) el.textContent = String(counters.errors);
+  }
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleTimeString(undefined, { hour12: false });
+}
+
+/**
+ * Increment the "Scrapes" counter (called from buttons.ts on success).
+ */
+export function recordScrape(): void {
+  counters.scrapes += 1;
+  const el = document.getElementById('counterScrapes');
+  if (el) el.textContent = String(counters.scrapes);
+}
+
+/**
+ * Hook up the "Clear log" button.
+ */
+function wireLogControls(): void {
+  const clear = document.getElementById('btnClearLog');
+  const list = document.getElementById('statusLog');
+  if (!clear || !list) return;
+  clear.addEventListener('click', () => {
+    list.replaceChildren();
+    logStatus('Log cleared.', 'info');
+  });
 }
 
 /**
@@ -52,33 +143,19 @@ function updateConversationCount(): void {
   }
 }
 
-/**
- * Update the global status indicator in the header.
- *
- * Exposed on `window` so other modules can surface scrape / save results
- * without each of them having to find the DOM nodes themselves.
- */
-function setStatus(text: string, kind: 'active' | 'error' | 'idle' = 'active'): void {
-  const indicator = document.getElementById('statusIndicator');
-  const label = document.getElementById('statusText');
-  if (label) label.textContent = text;
-  if (indicator) {
-    indicator.classList.remove('active', 'error', 'idle');
-    indicator.classList.add(kind);
-  }
-}
-
 declare global {
   interface Window {
-    setExtensionStatus: typeof setStatus;
+    logExtensionStatus: typeof logStatus;
+    recordScrapeCount: typeof recordScrape;
   }
 }
-window.setExtensionStatus = setStatus;
+window.logExtensionStatus = logStatus;
+window.recordScrapeCount = recordScrape;
 
 document.addEventListener('DOMContentLoaded', () => {
   init().catch(err => {
     console.error('[FullPage] Init failed:', err);
-    setStatus('Init failed', 'error');
+    logStatus(`Init failed: ${(err as Error).message}`, 'error');
   });
 });
 

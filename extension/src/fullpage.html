@@ -8,17 +8,13 @@
 </head>
 <body class="min-h-screen bg-slate-50 font-sans text-gray-900">
 <div class="flex min-h-screen flex-col">
-  <header class="flex items-center justify-between bg-gradient-to-br from-brand-600 to-accent-500 px-6 py-4 text-white">
+  <header class="bg-gradient-to-br from-brand-600 to-accent-500 px-6 py-4 text-white">
     <div class="flex items-center gap-3">
       <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-base font-bold text-linkedin">LI</div>
       <div>
         <h1 class="text-xl font-semibold">LinkedIn AI GTM</h1>
         <p class="text-xs opacity-90">AI-Powered Outreach Platform</p>
       </div>
-    </div>
-    <div class="flex items-center gap-1.5 text-xs">
-      <span id="statusIndicator" class="h-2 w-2 rounded-full bg-green-500 animate-status-pulse"></span>
-      <span id="statusText">Ready</span>
     </div>
   </header>
 
@@ -75,7 +71,7 @@
         <h2 class="mb-2 text-2xl font-semibold">Messages</h2>
         <p class="text-gray-500">Click a conversation to view messages</p>
       </div>
-      <div class="flex gap-4" style="height: calc(100vh - 250px);">
+      <div class="flex gap-4" style="height: calc(100vh - 380px);">
         <div class="flex w-80 flex-col overflow-hidden rounded-xl bg-white shadow-card">
           <div class="border-b border-gray-200 bg-gray-50 px-4 py-4 font-semibold">Conversations (<span id="convCount">0</span>)</div>
           <div class="flex-1 overflow-y-auto" id="contactsList">
@@ -113,7 +109,22 @@
     </section>
   </main>
 
-  <footer class="border-t border-gray-200 py-4 text-center text-xs text-gray-400">LinkedIn AI GTM v1.0.0</footer>
+  <!-- Activity / Status Log (replaces the old top-right indicator) -->
+  <section class="border-t border-gray-200 bg-white">
+    <div class="mx-auto max-w-7xl px-6 py-4">
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="text-sm font-semibold uppercase tracking-wide text-gray-500">Activity</h3>
+        <div class="flex items-center gap-4 text-xs text-gray-500">
+          <span>Scrapes: <span id="counterScrapes" class="font-semibold text-gray-700">0</span></span>
+          <span>Errors: <span id="counterErrors" class="font-semibold text-rose-600">0</span></span>
+          <button id="btnClearLog" class="text-xs text-brand-600 hover:underline">Clear log</button>
+        </div>
+      </div>
+      <ul id="statusLog" class="h-32 space-y-1 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-3 font-mono text-xs" aria-live="polite">
+        <!-- entries appended by fullpage.ts -->
+      </ul>
+    </div>
+  </section>
 </div>
 <script type="module" src="fullpage.js"></script>
 </body>

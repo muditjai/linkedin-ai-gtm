@@ -112,4 +112,19 @@
   .step-detail {
     @apply mt-0.5 text-sm;
   }
+
+  /* --- Activity log (rendered by fullpage.ts) ---------------------------- */
+  .log-entry {
+    @apply flex gap-2 leading-snug;
+  }
+  .log-time {
+    @apply shrink-0 text-gray-400;
+  }
+  .log-msg {
+    @apply break-words;
+  }
+  .log-entry.info  .log-msg { @apply text-gray-700; }
+  .log-entry.success .log-msg { @apply text-emerald-700; }
+  .log-entry.error  .log-msg { @apply text-rose-700; }
+  .log-entry.warn   .log-msg { @apply text-amber-700; }
 }

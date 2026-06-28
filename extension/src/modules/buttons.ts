@@ -1,8 +1,9 @@
 /**
  * Buttons Module
- * Wires up the click handlers used by the full-page UI.
  *
- * Element IDs referenced here must match those in `fullpage.html`.
+ * Wires up the click handlers used by the full-page UI. Status messages
+ * are pushed to the activity log at the bottom of the page via
+ * `window.logExtensionStatus` (set up by `fullpage.ts`).
  */
 
 import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
@@ -13,6 +14,11 @@ import { renderContacts } from './messages.js';
 const DEFAULT_SCRAPE_LIMIT = 20;
 const SCRAPE_LIMIT_MIN = 1;
 const SCRAPE_LIMIT_MAX = 100;
+
+interface ScrapeResponse extends ExtensionResponse {
+  data?: Conversation[];
+  count?: number;
+}
 
 /**
  * Attach click handlers to the action buttons.
@@ -50,9 +56,6 @@ function onClick(id: string, handler: () => void): void {
 
 /**
  * Scrape conversations from the active LinkedIn messaging tab.
- *
- * Reads the requested count from `#scrapeCount` if available, otherwise
- * falls back to the default.
  */
 async function scrapeConversations(): Promise<void> {
   const btn = document.getElementById('btnScrape') as HTMLButtonElement | null;
@@ -60,29 +63,36 @@ async function scrapeConversations(): Promise<void> {
 
   btn.disabled = true;
   const originalText = btn.textContent ?? 'Scrape Conversations';
-  btn.textContent = 'Scraping...';
-  setStatus('Scraping...', 'active');
+  const limit = readScrapeLimit();
+  btn.textContent = `Scraping ${limit}…`;
+  logStatus(`Scrape requested (limit=${limit})…`, 'info');
 
   try {
-    const limit = readScrapeLimit();
     const response = (await chrome.runtime.sendMessage({
       type: 'SCRAPE_CONVERSATIONS',
       limit,
-    } as ExtensionMessage)) as ExtensionResponse;
+    } as ExtensionMessage)) as ScrapeResponse;
 
-    if (response.success) {
-      window.popupState.conversations = (response.data as Conversation[]) ?? [];
+    if (response.success && response.data) {
+      const conversations = response.data;
+      window.popupState.conversations = conversations;
       renderContacts();
-      await loadDashboard();
-      setStatus(`Scraped ${window.popupState.conversations.length} conversations`, 'active');
       updateConversationCount();
+      await loadDashboard();
+      recordScrape();
+      logStatus(
+        `Scraped ${conversations.length} conversation${conversations.length === 1 ? '' : 's'}.`,
+        'success',
+      );
     } else {
-      console.error('[Buttons] Scrape failed:', response.error);
-      setStatus(`Scrape failed: ${response.error ?? 'unknown'}`, 'error');
+      logStatus(`Scrape failed: ${response.error ?? 'unknown error'}`, 'error');
     }
   } catch (error) {
     console.error('[Buttons] Error scraping:', error);
-    setStatus('Scrape failed. Are you on LinkedIn?', 'error');
+    logStatus(
+      `Scrape failed: ${(error as Error).message}. Reload the LinkedIn tab and try again.`,
+      'error',
+    );
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
@@ -98,12 +108,12 @@ async function saveSequencer(): Promise<void> {
 
   const sequencer = window.popupState.sequencer;
   if (!sequencer) {
-    setStatus('No sequencer loaded', 'error');
+    logStatus('No sequencer loaded to save.', 'error');
     return;
   }
 
   sequencer.name = nameInput.value;
-  setStatus('Saving sequencer...', 'active');
+  logStatus(`Saving sequencer "${sequencer.name}"…`, 'info');
 
   try {
     const response = (await chrome.runtime.sendMessage({
@@ -112,13 +122,13 @@ async function saveSequencer(): Promise<void> {
     } as ExtensionMessage)) as ExtensionResponse;
 
     if (response.success) {
-      setStatus('Sequencer saved', 'active');
+      logStatus(`Sequencer "${sequencer.name}" saved.`, 'success');
     } else {
-      setStatus(`Save failed: ${response.error ?? 'unknown'}`, 'error');
+      logStatus(`Save failed: ${response.error ?? 'unknown error'}`, 'error');
     }
   } catch (error) {
     console.error('[Buttons] Error saving sequencer:', error);
-    setStatus('Failed to save sequencer', 'error');
+    logStatus(`Save failed: ${(error as Error).message}`, 'error');
   }
 }
 
@@ -128,25 +138,24 @@ async function saveSequencer(): Promise<void> {
 function addSequencerStep(): void {
   const sequencer = window.popupState.sequencer;
   if (!sequencer) {
-    setStatus('No sequencer loaded', 'error');
+    logStatus('No sequencer loaded.', 'error');
     return;
   }
 
   sequencer.steps.push({
     id: `step_${Date.now()}`,
     type: 'message',
-    content: 'New message step...',
+    content: 'New message step…',
     next: null,
   });
   renderSequencer(sequencer);
-  setStatus(`Step ${sequencer.steps.length} added`, 'active');
+  logStatus(`Step ${sequencer.steps.length} added.`, 'info');
 }
 
 /**
  * Trigger sequence execution.
  *
- * NOTE: This is a stub until Phase 2 (service backend) is implemented. We
- * surface the placeholder message in the header instead of a modal alert.
+ * NOTE: This is a stub until Phase 2 (service backend) is implemented.
  */
 async function executeSequence(): Promise<void> {
   const btn = document.getElementById('btnExecute') as HTMLButtonElement | null;
@@ -154,17 +163,23 @@ async function executeSequence(): Promise<void> {
 
   btn.disabled = true;
   const originalText = btn.textContent ?? 'Execute';
-  btn.textContent = 'Executing...';
+  btn.textContent = 'Executing…';
+  logStatus('Executing sequence…', 'info');
 
   try {
     const response = (await chrome.runtime.sendMessage({
       type: 'EXECUTE_SEQUENCE',
       sequencer: window.popupState.sequencer,
     } as ExtensionMessage)) as ExtensionResponse;
-    setStatus(response.message ?? 'Sequence executed', response.success ? 'active' : 'error');
+
+    if (response.success) {
+      logStatus(response.message ?? 'Sequence executed.', 'success');
+    } else {
+      logStatus(`Execution failed: ${response.error ?? 'unknown error'}`, 'error');
+    }
   } catch (error) {
     console.error('[Buttons] Error executing sequence:', error);
-    setStatus('Execution failed', 'error');
+    logStatus(`Execution failed: ${(error as Error).message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
@@ -193,14 +208,31 @@ function updateConversationCount(): void {
   }
 }
 
+/* -------------------------------------------------------------------------- *
+ * Activity log helpers
+ * -------------------------------------------------------------------------- */
+
+type LogKind = 'info' | 'success' | 'error' | 'warn';
+
 /**
- * Update the header status indicator if `window.setExtensionStatus` is
- * available (it is, once `fullpage.ts` has finished initialising).
+ * Push a message into the bottom-of-page activity log. Falls back to the
+ * console if `fullpage.ts` hasn't initialised yet.
  */
-function setStatus(text: string, kind: 'active' | 'error' | 'idle' = 'active'): void {
-  if (typeof window.setExtensionStatus === 'function') {
-    window.setExtensionStatus(text, kind);
+function logStatus(message: string, kind: LogKind = 'info'): void {
+  const win = window as Window & {
+    logExtensionStatus?: (m: string, k: LogKind) => void;
+    recordScrapeCount?: () => void;
+  };
+  if (typeof win.logExtensionStatus === 'function') {
+    win.logExtensionStatus(message, kind);
     return;
   }
-  console.log(`[Buttons][${kind}] ${text}`);
+  console.log(`[Buttons][${kind}] ${message}`);
+}
+
+function recordScrape(): void {
+  const win = window as Window & { recordScrapeCount?: () => void };
+  if (typeof win.recordScrapeCount === 'function') {
+    win.recordScrapeCount();
+  }
 }
