@@ -8,9 +8,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install deps with a clean cache.
+# Install ALL deps (dev + prod) so `tsc` is available for the build.
+# We prune dev deps after `npm run build` to keep the runtime image small.
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 # Copy source and build to dist/.
 COPY tsconfig.json ./
