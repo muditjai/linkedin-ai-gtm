@@ -102,6 +102,18 @@ const SCROLL_MAX_ITERATIONS = 50;
 const SCROLL_STABLE_THRESHOLD = 3;
 const SCROLL_WAIT_MS = 500;
 
+/**
+ * Safety cap on the number of messages kept per scraped thread.
+ *
+ * The user-facing "Max conversations" input intentionally does NOT cap
+ * messages per thread - the text box is for the inbox list / click-through
+ * count only. We still want a hard upper bound to avoid pulling thousands
+ * of messages from a single very long thread (memory + UI rendering).
+ * 25 is "high enough to cover most real conversations, low enough to
+ * stay snappy". Tweak here if needed.
+ */
+const MAX_MESSAGES_PER_THREAD = 25;
+
 /* ---------------------------------------------------------------------------
  * Top-level error guards
  * ------------------------------------------------------------------------- */
@@ -472,9 +484,16 @@ function scrapeThreadMessages(): ScrapeThreadResponse {
 
   const messages: ConversationMessage[] = [];
   let currentDay: string | null = null;
-  let isLast = false;
+  // Track the index of the last kept message so we can flag needsReply
+  // correctly when the cap kicks in mid-thread.
+  let lastKeptIndex = -1;
 
   messageNodes.forEach((node, index) => {
+    // Per-thread message cap (safety guard against very long threads).
+    // Independent of the user-facing "Max conversations" cap.
+    if (messages.length >= MAX_MESSAGES_PER_THREAD) {
+      return;
+    }
     // LinkedIn emits a "Friday" / "Saturday" heading as its own list item
     // *before* the first message of that day. When we see one, capture it so
     // the next message(s) inherit it.
@@ -489,12 +508,16 @@ function scrapeThreadMessages(): ScrapeThreadResponse {
 
     const message = extractThreadMessage(node, threadId, currentDay);
     if (message) {
-      isLast = index === messageNodes.length - 1;
-      message.needsReply =
-        isLast && message.direction === 'inbound';
+      lastKeptIndex = index;
       messages.push(message);
     }
   });
+
+  // Flag `needsReply` on the most recent kept message when it's inbound.
+  if (lastKeptIndex >= 0) {
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg) lastMsg.needsReply = lastMsg.direction === 'inbound';
+  }
 
   console.log('[Content] Scraped', messages.length, 'thread messages');
   return {
@@ -706,12 +729,15 @@ const THREAD_NAV_TIMEOUT_MS = 8000;
 
 /**
  * Combined scrape: auto-scroll the inbox AND click through up to `cap`
- * conversations to scrape their full threads. A single `cap` is used for
- * BOTH the inbox row count and the per-conversation click-through so the
+ * conversations to scrape their threads. A single `cap` is used for BOTH
+ * the inbox row count and the per-conversation click-through so the
  * user-facing input "Max conversations: N" maps to "first N of everything".
  *
- * For each clicked conversation we extract the FULL message history
- * (right-pane "thread") - there is no separate per-thread message cap.
+ * For each clicked conversation we extract as many messages as LinkedIn
+ * will virtualise into the DOM, capped at `MAX_MESSAGES_PER_THREAD` (an
+ * internal safety guard). The cap is INDEPENDENT of the user-facing
+ * conversationLimit - the text box controls the inbox / click-through
+ * count only, never the message count.
  *
  * Returns:
  *   - `conversations`:  capped inbox rows (size <= `cap`)
@@ -912,7 +938,16 @@ async function scrapeThreadsByClicking(
     const messageNodes = pickMessageEventNodes(list);
     const messagesFromNodeList: ConversationMessage[] = [];
     let currentDay: string | null = null;
+    // Track the index of the LAST message we keep so we can correctly
+    // flag `needsReply` on it. The DOM index of the last kept message
+    // depends on how many day-heading <li> nodes we skipped.
+    let lastKeptIndex = -1;
     messageNodes.forEach((node, idx) => {
+      // Per-thread message cap (safety guard against very long threads).
+      // Independent of the user-facing "Max conversations" cap.
+      if (messagesFromNodeList.length >= MAX_MESSAGES_PER_THREAD) {
+        return;
+      }
       const dayHeadingEl = node.querySelector(
         '.msg-s-message-list__time-heading',
       );
@@ -922,11 +957,16 @@ async function scrapeThreadsByClicking(
       }
       const message = extractThreadMessage(node, getThreadId(), currentDay);
       if (message) {
-        message.needsReply =
-          idx === messageNodes.length - 1 && message.direction === 'inbound';
+        lastKeptIndex = idx;
         messagesFromNodeList.push(message);
       }
     });
+    // Flag `needsReply` on the last kept message (the most recent one we
+    // captured) when it's inbound.
+    if (lastKeptIndex >= 0) {
+      const lastMsg = messagesFromNodeList[messagesFromNodeList.length - 1];
+      if (lastMsg) lastMsg.needsReply = lastMsg.direction === 'inbound';
+    }
 
     if (messagesFromNodeList.length > 0) {
       const urn = getThreadId();
