@@ -1,0 +1,123 @@
+# Kubernetes Deployment + Service for the LinkedIn AI GTM service backend.
+#
+# Target cluster (from AGENTS.md):
+#   f3f8ebb0-4388-4a6f-9e36-3f3e60211c6b.k8s.ondigitalocean.com
+#
+# Apply:
+#   doctl kubernetes cluster kubeconfig save f3f8ebb0-4388-4a6f-9e36-3f3e60211c6b
+#   kubectl --context do-fra1-linkedin-ai apply -f backend/k8s/deployment.yaml
+#   kubectl --context do-fra1-linkedin-ai apply -f backend/k8s/secret.yaml
+#
+# Verify:
+#   kubectl get pods -l app=linkedin-ai-backend
+#   kubectl port-forward svc/linkedin-ai-backend 3000:3000
+#   curl http://localhost:3000/health
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: linkedin-ai-backend
+  labels:
+    app: linkedin-ai-backend
+    tier: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: linkedin-ai-backend
+  template:
+    metadata:
+      labels:
+        app: linkedin-ai-backend
+        tier: api
+    spec:
+      containers:
+        - name: linkedin-ai-backend
+          image: registry.digitalocean.com/hackathon-registry/linkedin-ai-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: PORT
+              value: '3000'
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: linkedin-ai-secrets
+                  key: mongodb-uri
+            - name: MONGODB_DB_NAME
+              value: linkedin-ai
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: linkedin-ai-secrets
+                  key: gemini-api-key
+            - name: GEMINI_MODEL
+              value: gemini-1.5-pro
+            - name: DO_INFERENCE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: linkedin-ai-secrets
+                  key: do-inference-token
+                  optional: true
+            - name: DO_INFERENCE_BASE_URL
+              value: https://inference.digitalocean.com/v1
+            - name: DO_INFERENCE_MODEL
+              value: gpt-oss-20b
+            - name: ALLOWED_ORIGINS
+              value: '*'
+            - name: RATE_LIMIT_WINDOW_MS
+              value: '60000'
+            - name: RATE_LIMIT_MAX
+              value: '240'
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: '100m'
+              memory: '192Mi'
+            limits:
+              cpu: '500m'
+              memory: '512Mi'
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: linkedin-ai-backend
+  labels:
+    app: linkedin-ai-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: linkedin-ai-backend
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
