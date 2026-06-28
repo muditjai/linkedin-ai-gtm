@@ -1,77 +1,67 @@
 /**
  * Conversations Handler
- * Handles conversation-related operations
  */
 
 import type { ExtensionMessage, ExtensionResponse, Conversation } from '../types.js';
 
-/**
- * Handle conversation operations
- */
 export async function handleConversations(
   message: ExtensionMessage,
   sender: chrome.runtime.MessageSender
 ): Promise<ExtensionResponse> {
-  console.log('[Conversations] Handling message:', message.type);
+  console.log('[Conversations] Handling:', message.type);
   
-  try {
-    switch (message.type) {
-      case 'GET_CONVERSATIONS':
-        return await getConversations();
-      case 'SCRAPE_CONVERSATIONS':
-        return await scrapeConversations(message);
-      default:
-        return { success: false, error: 'Unknown message type' };
-    }
-  } catch (error) {
-    console.error('[Conversations] Error:', error);
-    return { success: false, error: (error as Error).message };
+  switch (message.type) {
+    case 'GET_CONVERSATIONS':
+      return await getConversations();
+    case 'SCRAPE_CONVERSATIONS':
+      return await scrapeConversations(message);
+    default:
+      return { success: false, error: 'Unknown message type' };
   }
 }
 
-/**
- * Get stored conversations
- */
 async function getConversations(): Promise<ExtensionResponse<Conversation[]>> {
-  console.log('[Conversations] Getting conversations from storage');
   const result = await chrome.storage.local.get(['conversations']);
-  const data = result.conversations || [];
-  console.log('[Conversations] Got conversations:', data.length);
-  return { success: true, data };
+  return { success: true, data: result.conversations || [] };
 }
 
-/**
- * Scrape conversations from LinkedIn messages page
- */
-async function scrapeConversations(
-  message: ExtensionMessage
-): Promise<ExtensionResponse<number>> {
-  console.log('[Conversations] Starting scrape');
+async function scrapeConversations(message: ExtensionMessage): Promise<ExtensionResponse<number>> {
+  const limit = message.limit || 20;
+  console.log('[Conversations] Scraping', limit, 'conversations');
   
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  console.log('[Conversations] Current tab:', tab.url);
-
-  if (!tab.url || !tab.url.includes('linkedin.com')) {
-    console.log('[Conversations] Not on LinkedIn page');
-    return { success: false, error: 'Not on LinkedIn page. Please open LinkedIn first.' };
+  // Find the LinkedIn tab
+  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/*' });
+  console.log('[Conversations] Found', tabs.length, 'LinkedIn tabs');
+  
+  if (tabs.length === 0) {
+    return { success: false, error: 'No LinkedIn tab found. Please open LinkedIn first.' };
   }
-
+  
+  // Use the first LinkedIn tab
+  const linkedInTab = tabs[0];
+  
+  if (!linkedInTab.id) {
+    return { success: false, error: 'LinkedIn tab not accessible' };
+  }
+  
   try {
-    const response = await chrome.tabs.sendMessage(tab.id, {
-      type: 'SCRAPE_MESSAGES',
-      limit: message.limit || 10
-    } as ExtensionMessage);
-
-    console.log('[Conversations] Scrape response:', response);
-
+    // Send message to content script on LinkedIn tab
+    const response = await chrome.tabs.sendMessage(linkedInTab.id, {
+      type: 'SCRAPE_CONVERSATIONS',
+      limit: limit
+    });
+    
+    console.log('[Conversations] Got response:', response);
+    
     if (response && response.conversations) {
+      // Store in local storage
       await chrome.storage.local.set({ conversations: response.conversations });
       return { success: true, count: response.conversations.length };
     }
     
-    return { success: false, error: 'No conversations found' };
+    return { success: false, error: response?.error || 'No conversations found' };
   } catch (error) {
-    console.error('[Conversations] Scrape error:', error);
-    return { success: false, error: 'Failed to scrape: ' + (error as Error).message };
+    console.error('[Conversations] Error:', error);
+    return { success: false, error: 'Failed to scrape. Make sure LinkedIn messages page is loaded.' };
   }
 }

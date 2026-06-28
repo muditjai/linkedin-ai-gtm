@@ -3,6 +3,7 @@
 ## Code Guidelines
 
 ### Modular Code & Test Cases
+- Always read the code first before making any changes.
 - Keep code modular - split large files into smaller, focused modules
 - Don't create super long files - if a file exceeds ~300 lines, consider splitting it
 - Write test cases for new functionality where appropriate

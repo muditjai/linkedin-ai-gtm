@@ -1,30 +1,9 @@
 /**
  * LinkedIn AI GTM - Content Script
- * Handles scraping and interaction with LinkedIn pages
+ * Handles scraping LinkedIn pages
  */
 
-// Prevent multiple injections
-if ((window as unknown as { linkedInAIGTMInitialized: boolean }).linkedInAIGTMInitialized) {
-  throw new Error('Content script already initialized');
-}
-(window as unknown as { linkedInAIGTMInitialized: boolean }).linkedInAIGTMInitialized = true;
-
-console.log('[Content] LinkedIn AI GTM loaded');
-
-// Types for content script
-interface ContentMessage {
-  type: string;
-  limit?: number;
-  conversationId?: string;
-}
-
-interface ContentResponse {
-  success: boolean;
-  conversations?: ContentConversation[];
-  error?: string;
-}
-
-interface ContentConversation {
+interface Conversation {
   id: string;
   name: string;
   preview: string;
@@ -34,167 +13,99 @@ interface ContentConversation {
   unread: boolean;
 }
 
-interface PageInfo {
-  url: string;
-  path: string;
-  pageType: string;
-  loggedIn: boolean;
+interface ScrapeResponse {
+  success: boolean;
+  conversations?: Conversation[];
+  error?: string;
 }
 
-// Listen for messages from background/popup
-if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-  chrome.runtime.onMessage.addListener(
-    (message: ContentMessage, _sender: chrome.runtime.MessageSender) => {
-      console.log('[Content] Received message:', message.type);
-
-      switch (message.type) {
-        case 'SCRAPE_MESSAGES':
-          return handleScrapeMessages(message.limit);
-
-        case 'GET_PAGE_INFO':
-          return getPageInfo();
-
-        case 'HIGHLIGHT_CONVERSATION':
-          highlightConversation(message.conversationId || '');
-          return { success: true };
-
-        default:
-          console.warn('[Content] Unknown message type:', message.type);
-          return { success: false };
-      }
-    }
-  );
-} else {
-  console.log('[Content] Chrome runtime not available');
+// Check if on LinkedIn messages page
+function isLinkedInMessagesPage(): boolean {
+  return window.location.href.includes('linkedin.com/messaging');
 }
 
-/**
- * Scrape messages from LinkedIn messages page
- */
-function handleScrapeMessages(limit = 10): ContentResponse {
-  const conversations: ContentConversation[] = [];
+// Handle messages from background or popup
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  console.log('[Content] Received:', message.type);
+  
+  switch (message.type) {
+    case 'SCRAPE_CONVERSATIONS':
+      const result = scrapeConversations(message.limit || 20);
+      console.log('[Content] Scrape result:', result);
+      sendResponse(result);
+      break;
+    default:
+      sendResponse({ success: false, error: 'Unknown message type' });
+  }
+  return true;
+});
 
+
+function scrapeConversations(limit = 20): ScrapeResponse {
   try {
-    // Wait for page to load
-    const container = waitForElement('.msg-conversations-container__conversations-list', 5000);
-    if (!container) {
-      return { success: false, conversations: [], error: 'Messages container not found' };
+    console.log('[Content] Scraping conversations, limit:', limit);
+    
+    // Find conversation list items - try multiple selectors
+    let items = document.querySelectorAll('.msg-conversations-container__convo-item');
+    if (items.length === 0) {
+      items = document.querySelectorAll('li[class*="conversation-listitem"]');
     }
-
-    // Find conversation elements
-    const conversationElements = document.querySelectorAll(
-      '.msg-conversations-container__conversation-item'
-    );
-
-    for (let i = 0; i < Math.min(conversationElements.length, limit); i++) {
-      const element = conversationElements[i];
-      const conversation = parseConversation(element);
-      if (conversation) {
-        conversations.push(conversation);
+    if (items.length === 0) {
+      items = document.querySelectorAll('li[data-conversation-id]');
+    }
+    
+    console.log('[Content] Found', items.length, 'items');
+    
+    if (items.length === 0) {
+      return { success: false, error: 'No conversations found. Make sure you are on LinkedIn messages page.' };
+    }
+    
+    const conversations: Conversation[] = [];
+    
+    items.forEach((item, index) => {
+      if (index >= limit) return;
+      
+      // Get name
+      const nameEl = item.querySelector('.msg-conversation-listitem__participant-names, h3, [class*="participant"]');
+      let name = nameEl?.textContent?.trim() || 'Unknown';
+      if (name === 'Unknown') {
+        const span = item.querySelector('span');
+        name = span?.textContent?.trim() || 'Unknown';
       }
-    }
-
+      
+      // Get avatar
+      const avatarEl = item.querySelector('img');
+      const avatar = avatarEl?.src || null;
+      
+      // Get preview
+      const previewEl = item.querySelector('.msg-conversation-card__message-snippet, p, [class*="snippet"]');
+      const preview = previewEl?.textContent?.trim() || '';
+      
+      // Get time
+      const timeEl = item.querySelector('time, [class*="time"]');
+      const time = timeEl?.textContent?.trim() || '';
+      
+      // Check unread
+      const unread = item.classList.contains('msg-conversations-container__convo-item--unread');
+      
+      conversations.push({
+        id: 'conv_' + index + '_' + Date.now(),
+        name,
+        avatar,
+        preview,
+        time,
+        lastMessageAt: new Date().toISOString(),
+        unread
+      });
+    });
+    
     console.log('[Content] Scraped', conversations.length, 'conversations');
     return { success: true, conversations };
-
+    
   } catch (error) {
-    console.error('[Content] Error scraping messages:', error);
-    return { success: false, conversations: [], error: (error as Error).message };
+    console.error('[Content] Scrape error:', error);
+    return { success: false, error: (error as Error).message };
   }
 }
 
-/**
- * Parse a conversation element
- */
-function parseConversation(element: Element): ContentConversation | null {
-  try {
-    const nameEl = element.querySelector('.msg-conversation-listitem__name');
-    const previewEl = element.querySelector('.msg-conversation-listitem__message-body');
-    const timeEl = element.querySelector('.msg-conversation-listitem__time-offset');
-    const avatarEl = element.querySelector('.msg-conversation-listitem__avatar');
-
-    return {
-      id: (element as HTMLElement).dataset.conversationId || generateId(),
-      name: nameEl?.textContent?.trim() || 'Unknown',
-      preview: previewEl?.textContent?.trim() || '',
-      time: timeEl?.textContent?.trim() || '',
-      avatar: avatarEl?.getAttribute('src') || null,
-      lastMessageAt: new Date().toISOString(),
-      unread: element.classList.contains('msg-conversation-listitem--unread')
-    };
-  } catch (error) {
-    console.error('[Content] Error parsing conversation:', error);
-    return null;
-  }
-}
-
-/**
- * Get current page information
- */
-function getPageInfo(): PageInfo {
-  const path = window.location.pathname;
-  let pageType = 'unknown';
-
-  if (path.includes('/messaging/')) {
-    pageType = 'messages';
-  } else if (path.includes('/in/')) {
-    pageType = 'profile';
-  } else if (path.includes('/feed/')) {
-    pageType = 'feed';
-  }
-
-  return {
-    url: window.location.href,
-    path,
-    pageType,
-    loggedIn: !!document.querySelector('.global-nav')
-  };
-}
-
-/**
- * Highlight a conversation for visibility
- */
-function highlightConversation(conversationId: string): void {
-  const element = document.querySelector(
-    `[data-conversation-id="${conversationId}"]`
-  ) as HTMLElement | null;
-  
-  if (element) {
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    element.classList.add('linkedin-ai-gtm-highlight');
-  }
-}
-
-/**
- * Wait for element to exist
- */
-function waitForElement(selector: string, timeout = 5000): Element | null {
-  const element = document.querySelector(selector);
-  if (element) {
-    return element;
-  }
-
-  return new Promise<Element | null>((resolve) => {
-    const observer = new MutationObserver(() => {
-      const element = document.querySelector(selector);
-      if (element) {
-        observer.disconnect();
-        resolve(element);
-      }
-    });
-
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    setTimeout(() => {
-      observer.disconnect();
-      resolve(null);
-    }, timeout);
-  }) as unknown as Element | null;
-}
-
-/**
- * Generate unique ID
- */
-function generateId(): string {
-  return `conv_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-}
+console.log('[Content] LinkedIn AI GTM loaded on', window.location.href);
