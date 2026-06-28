@@ -1,0 +1,115 @@
+/**
+ * Tailwind entry point for the full-page app.
+ *
+ * This file is compiled by `npm run build:css` into `dist/fullpage.css`
+ * which the full-page HTML loads. The compiled output is auto-purged of
+ * any utility classes that aren't referenced in the HTML / TS sources.
+ *
+ * The `@layer components` block defines semantic class names that mirror
+ * the rest of the extension's naming conventions. Modules that render
+ * dynamic DOM (e.g. `modules/messages.ts`, `modules/sequencer.ts`) attach
+ * these classes directly to the nodes they create.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /* --- Tabs ---------------------------------------------------------------- */
+  .tab {
+    @apply border-b-2 border-transparent px-6 py-4 text-sm font-medium
+           text-gray-500 transition-colors hover:text-brand-600;
+  }
+  .tab.active {
+    @apply border-brand-600 text-brand-600;
+  }
+  .tab-content {
+    @apply hidden;
+  }
+  .tab-content.active {
+    @apply block;
+  }
+
+  /* --- Buttons & inputs --------------------------------------------------- */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+           text-sm font-medium transition-colors disabled:cursor-not-allowed
+           disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .btn-secondary {
+    @apply btn bg-gray-100 text-gray-700 hover:bg-gray-200;
+  }
+  .input {
+    @apply rounded-lg border border-gray-200 px-3 py-2 text-sm
+           focus:border-brand-600 focus:outline-none;
+  }
+
+  /* --- Stat cards --------------------------------------------------------- */
+  .stat-card {
+    @apply rounded-lg bg-gray-50 p-5 text-center;
+  }
+  .stat-value {
+    @apply text-3xl font-bold text-brand-600;
+  }
+  .stat-label {
+    @apply mt-1 text-xs uppercase tracking-wide text-gray-500;
+  }
+
+  /* --- Contact list (rendered by modules/messages.ts) -------------------- */
+  .contact-item {
+    @apply flex cursor-pointer items-center gap-3 border-b border-gray-100
+           px-4 py-3 hover:bg-gray-50;
+  }
+  .contact-item.active {
+    @apply bg-brand-600 text-white hover:bg-brand-700;
+  }
+  .contact-avatar {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-full
+           bg-gray-200 text-sm font-semibold;
+  }
+  .contact-info {
+    @apply min-w-0 flex-1;
+  }
+  .contact-name {
+    @apply truncate font-medium;
+  }
+  .empty-state {
+    @apply flex h-full flex-col items-center justify-center p-10 text-center
+           text-gray-400;
+  }
+  .conversation-header {
+    @apply mb-4 flex items-center gap-3 border-b border-gray-200 pb-3;
+  }
+  .conversation-time {
+    @apply text-xs text-gray-400;
+  }
+  .conversation-messages {
+    @apply flex flex-col gap-3;
+  }
+  .message-preview {
+    @apply whitespace-pre-wrap rounded-lg bg-gray-100 p-3 text-sm leading-relaxed;
+  }
+
+  /* --- Sequencer steps (rendered by modules/sequencer.ts) ---------------- */
+  .sequencer-step {
+    @apply flex items-center gap-3 rounded-lg border border-gray-200
+           bg-gray-50 p-3;
+  }
+  .step-number {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-full
+           bg-brand-600 text-xs font-semibold text-white;
+  }
+  .step-content {
+    @apply flex-1;
+  }
+  .step-type {
+    @apply text-xs uppercase tracking-wide text-gray-500;
+  }
+  .step-detail {
+    @apply mt-0.5 text-sm;
+  }
+}

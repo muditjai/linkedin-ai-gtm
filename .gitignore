@@ -12,10 +12,12 @@ skills-lock.json
 # Extension build output and stale compiled artefacts
 extension/dist/
 extension/node_modules/
-# Top-level compiled .js files were an older build layout. The current
-# build writes into extension/dist/ — these should never be committed again.
+# Older build layout wrote a few stray .js files at the extension root.
+# Modern builds write only into extension/dist/, so these should never come
+# back. The negation below keeps config files (tailwind.config.js, …)
+# tracked while still blocking bare-name artefacts like `background.js`.
 extension/*.js
-!extension/*.json
+!extension/*.config.js
 
 # IDE
 .vscode/

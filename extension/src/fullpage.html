@@ -4,159 +4,87 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LinkedIn AI GTM</title>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1a1a1a;min-height:100vh}
-    .app{display:flex;flex-direction:column;min-height:100vh}
-    .header{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:white;padding:16px 24px;display:flex;justify-content:space-between;align-items:center}
-    .header-logo{display:flex;align-items:center;gap:12px}
-    .logo-icon{width:40px;height:40px;background:white;color:#0a66c2;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px}
-    .header h1{font-size:20px;font-weight:600}
-    .header p{font-size:12px;opacity:0.9}
-    .header-status{display:flex;align-items:center;gap:6px;font-size:12px}
-    .status-dot{width:8px;height:8px;border-radius:50%;background:#22c55e}
-    .status-dot.active{animation:pulse 2s infinite}
-    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
-    .nav{background:white;border-bottom:1px solid #e5e7eb;padding:0 24px}
-    .tabs{display:flex;gap:4px;list-style:none}
-    .tab{padding:16px 24px;background:none;border:none;border-bottom:2px solid transparent;color:#6b7280;font-size:14px;font-weight:500;cursor:pointer}
-    .tab:hover{color:#4f46e5}
-    .tab.active{color:#4f46e5;border-bottom-color:#4f46e5}
-    .main{flex:1;padding:24px;max-width:1400px;margin:0 auto;width:100%}
-    .tab-content{display:none}
-    .tab-content.active{display:block}
-    .page-header{margin-bottom:24px}
-    .page-title{font-size:24px;font-weight:600;margin-bottom:8px}
-    .page-desc{color:#6b7280}
-    .card{background:white;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}
-    .card-title{font-size:16px;font-weight:600;margin-bottom:16px}
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
-    .stat-card{background:#f9fafb;border-radius:8px;padding:20px;text-align:center}
-    .stat-value{font-size:32px;font-weight:700;color:#4f46e5}
-    .stat-label{font-size:12px;color:#6b7280;text-transform:uppercase;margin-top:4px}
-    .stats-row{display:flex;gap:16px}
-    .outcome-card{flex:1;display:flex;flex-direction:column;align-items:center;padding:20px;border-radius:8px}
-    .outcome-card.positive{background:#ecfdf5}
-    .outcome-card.negative{background:#fef2f2}
-    .outcome-value{font-size:28px;font-weight:700}
-    .outcome-label{font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
-    .btn{padding:10px 16px;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;transition:all 0.2s}
-    .btn-primary{background:#4f46e5;color:white}
-    .btn-primary:hover{background:#4338ca}
-    .btn-secondary{background:#f3f4f6;color:#374151}
-    .btn-secondary:hover{background:#e5e7eb}
-    .btn:disabled{opacity:0.5;cursor:not-allowed}
-    .input{padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px}
-    .input-group{display:flex;gap:12px;align-items:center;margin-bottom:16px}
-    .scrape-status{display:flex;flex-direction:column;gap:12px;padding:16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px}
-    .scrape-info{display:flex;justify-content:space-between;font-size:13px;color:#6b7280}
-    .flex{display:flex;gap:16px;height:calc(100vh - 350px)}
-    .sidebar{width:350px;background:white;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:flex;flex-direction:column}
-    .sidebar-header{padding:16px;border-bottom:1px solid #e5e7eb;font-weight:600;background:#f9fafb}
-    .contacts-list{flex:1;overflow-y:auto}
-    .contact-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #f3f4f6;cursor:pointer}
-    .contact-item:hover{background:#f9fafb}
-    .contact-item.active{background:#4f46e5;color:white}
-    .contact-avatar{width:40px;height:40px;background:#e5e7eb;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;flex-shrink:0}
-    .contact-info{flex:1;min-width:0}
-    .contact-name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .messages-area{flex:1;background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.1);display:flex;flex-direction:column;overflow:hidden}
-    .messages-header{padding:16px;border-bottom:1px solid #e5e7eb;font-weight:600;font-size:16px}
-    .conversation-view{flex:1;overflow-y:auto;padding:16px}
-    .conversation-header{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid #e5e7eb;margin-bottom:16px}
-    .conversation-time{font-size:12px;color:#9ca3af}
-    .conversation-messages{display:flex;flex-direction:column;gap:12px}
-    .message-preview{padding:12px;background:#f3f4f6;border-radius:8px;font-size:14px;line-height:1.5;white-space:pre-wrap}
-    .loading{text-align:center;padding:20px;color:#6b7280}
-    .empty-state{padding:40px;text-align:center;color:#9ca3af;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%}
-    .empty-state .hint{font-size:12px;margin-top:4px}
-    .seq-container{display:flex;flex-direction:column;gap:16px}
-    .seq-name-row{display:flex;gap:12px;align-items:center}
-    .sequencer-name{flex:1;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px}
-    .sequencer-name:focus{outline:0;border-color:#4f46e5}
-    .sequencer-steps{display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto}
-    .sequencer-step{display:flex;align-items:center;gap:12px;padding:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px}
-    .step-number{width:24px;height:24px;background:#4f46e5;color:white;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
-    .step-content{flex:1}
-    .step-type{font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px}
-    .step-detail{font-size:13px;margin-top:2px}
-    .sequencer-actions{display:flex;gap:12px}
-    .footer{padding:16px 24px;border-top:1px solid #e5e7eb;text-align:center;color:#9ca3af;font-size:12px}
-  </style>
+  <link rel="stylesheet" href="fullpage.css">
 </head>
-<body>
-<div class="app">
-  <header class="header">
-    <div class="header-logo">
-      <div class="logo-icon">LI</div>
+<body class="min-h-screen bg-slate-50 font-sans text-gray-900">
+<div class="flex min-h-screen flex-col">
+  <header class="flex items-center justify-between bg-gradient-to-br from-brand-600 to-accent-500 px-6 py-4 text-white">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-base font-bold text-linkedin">LI</div>
       <div>
-        <h1>LinkedIn AI GTM</h1>
-        <p>AI-Powered Outreach Platform</p>
+        <h1 class="text-xl font-semibold">LinkedIn AI GTM</h1>
+        <p class="text-xs opacity-90">AI-Powered Outreach Platform</p>
       </div>
     </div>
-    <div class="header-status">
-      <span id="statusIndicator" class="status-dot active"></span>
+    <div class="flex items-center gap-1.5 text-xs">
+      <span id="statusIndicator" class="h-2 w-2 rounded-full bg-green-500 animate-status-pulse"></span>
       <span id="statusText">Ready</span>
     </div>
   </header>
 
-  <nav class="nav">
-    <ul class="tabs">
+  <nav class="border-b border-gray-200 bg-white px-6">
+    <ul class="flex gap-1">
       <li><button class="tab active" data-tab="dashboard">Dashboard</button></li>
       <li><button class="tab" data-tab="messages">Messages</button></li>
       <li><button class="tab" data-tab="sequencer">Sequencer</button></li>
     </ul>
   </nav>
 
-  <main class="main">
+  <main class="mx-auto w-full max-w-7xl flex-1 px-6 py-6">
     <section id="dashboard-tab" class="tab-content active">
-      <div class="page-header">
-        <h2 class="page-title">Dashboard</h2>
-        <p class="page-desc">Overview of your LinkedIn outreach</p>
+      <div class="mb-6">
+        <h2 class="mb-2 text-2xl font-semibold">Dashboard</h2>
+        <p class="text-gray-500">Overview of your LinkedIn outreach</p>
       </div>
 
-      <div class="stats-grid">
+      <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="stat-card"><div class="stat-value" id="statConversations">0</div><div class="stat-label">Conversations</div></div>
         <div class="stat-card"><div class="stat-value" id="statToReply">0</div><div class="stat-label">To Reply</div></div>
         <div class="stat-card"><div class="stat-value" id="statSent">0</div><div class="stat-label">Sent</div></div>
         <div class="stat-card"><div class="stat-value" id="statReceived">0</div><div class="stat-label">Received</div></div>
       </div>
 
-      <div class="card">
-        <h3 class="card-title">Outcomes</h3>
-        <div class="stats-row">
-          <div class="outcome-card positive"><span class="outcome-value" id="statPositive">0</span><span class="outcome-label">Positive</span></div>
-          <div class="outcome-card negative"><span class="outcome-value" id="statNegative">0</span><span class="outcome-label">Negative</span></div>
+      <div class="mb-6 rounded-xl bg-white p-6 shadow-card">
+        <h3 class="mb-4 text-base font-semibold">Outcomes</h3>
+        <div class="flex gap-4">
+          <div class="flex flex-1 flex-col items-center rounded-lg bg-emerald-50 py-5">
+            <span class="text-2xl font-bold text-emerald-600" id="statPositive">0</span>
+            <span class="mt-1 text-xs uppercase tracking-wide text-emerald-700">Positive</span>
+          </div>
+          <div class="flex flex-1 flex-col items-center rounded-lg bg-rose-50 py-5">
+            <span class="text-2xl font-bold text-rose-600" id="statNegative">0</span>
+            <span class="mt-1 text-xs uppercase tracking-wide text-rose-700">Negative</span>
+          </div>
         </div>
       </div>
 
-      <div class="card">
-        <h3 class="card-title">Scrape</h3>
-        <div class="input-group">
-          <input type="number" id="scrapeCount" class="input" value="20" min="1" max="100" placeholder="Count">
-          <button id="btnScrape" class="btn btn-primary">Scrape Conversations</button>
+      <div class="rounded-xl bg-white p-6 shadow-card">
+        <h3 class="mb-4 text-base font-semibold">Scrape</h3>
+        <div class="mb-4 flex items-center gap-3">
+          <input type="number" id="scrapeCount" class="input w-32" value="20" min="1" max="100" placeholder="Count">
+          <button id="btnScrape" class="btn-primary">Scrape Conversations</button>
         </div>
-        <div class="scrape-status">
-          <div class="scrape-info"><span>Last scrape:</span><span id="lastScrapeTime">Never</span></div>
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
+          <div class="flex justify-between"><span>Last scrape:</span><span id="lastScrapeTime">Never</span></div>
         </div>
       </div>
     </section>
 
     <section id="messages-tab" class="tab-content">
-      <div class="page-header">
-        <h2 class="page-title">Messages</h2>
-        <p class="page-desc">Click a conversation to view messages</p>
+      <div class="mb-6">
+        <h2 class="mb-2 text-2xl font-semibold">Messages</h2>
+        <p class="text-gray-500">Click a conversation to view messages</p>
       </div>
-      <div class="flex">
-        <div class="sidebar">
-          <div class="sidebar-header">Conversations (<span id="convCount">0</span>)</div>
-          <div class="contacts-list" id="contactsList">
-            <div class="empty-state"><p>No conversations</p><p class="hint">Scrape from Dashboard</p></div>
+      <div class="flex gap-4" style="height: calc(100vh - 250px);">
+        <div class="flex w-80 flex-col overflow-hidden rounded-xl bg-white shadow-card">
+          <div class="border-b border-gray-200 bg-gray-50 px-4 py-4 font-semibold">Conversations (<span id="convCount">0</span>)</div>
+          <div class="flex-1 overflow-y-auto" id="contactsList">
+            <div class="empty-state"><p>No conversations</p><p class="mt-1 text-xs">Scrape from Dashboard</p></div>
           </div>
         </div>
-        <div class="messages-area">
-          <div class="messages-header">Select a conversation</div>
-          <div class="conversation-view" id="conversationView">
+        <div class="flex flex-1 flex-col overflow-hidden rounded-xl bg-white shadow-card">
+          <div class="border-b border-gray-200 px-4 py-4 text-base font-semibold">Select a conversation</div>
+          <div class="flex-1 overflow-y-auto p-4" id="conversationView">
             <div class="empty-state">Click on a conversation on the left to load messages</div>
           </div>
         </div>
@@ -164,28 +92,28 @@
     </section>
 
     <section id="sequencer-tab" class="tab-content">
-      <div class="page-header">
-        <h2 class="page-title">Sequencer</h2>
-        <p class="page-desc">Create outreach sequences with delays and AI-generated messages</p>
+      <div class="mb-6">
+        <h2 class="mb-2 text-2xl font-semibold">Sequencer</h2>
+        <p class="text-gray-500">Create outreach sequences with delays and AI-generated messages</p>
       </div>
-      <div class="card">
-        <h3 class="card-title">Sequence</h3>
-        <div class="seq-container">
-          <div class="seq-name-row">
-            <input type="text" id="sequencerName" class="sequencer-name" placeholder="Sequence Name">
-            <button id="btnSaveSequencer" class="btn btn-secondary">Save</button>
+      <div class="rounded-xl bg-white p-6 shadow-card">
+        <h3 class="mb-4 text-base font-semibold">Sequence</h3>
+        <div class="flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <input type="text" id="sequencerName" class="input flex-1" placeholder="Sequence Name">
+            <button id="btnSaveSequencer" class="btn-secondary">Save</button>
           </div>
-          <div id="sequencerSteps" class="sequencer-steps"></div>
-          <div class="sequencer-actions">
-            <button id="btnAddStep" class="btn btn-secondary">+ Add Step</button>
-            <button id="btnExecute" class="btn btn-primary">Execute</button>
+          <div id="sequencerSteps" class="flex max-h-80 flex-col gap-2 overflow-y-auto"></div>
+          <div class="flex gap-3">
+            <button id="btnAddStep" class="btn-secondary">+ Add Step</button>
+            <button id="btnExecute" class="btn-primary">Execute</button>
           </div>
         </div>
       </div>
     </section>
   </main>
 
-  <footer class="footer">LinkedIn AI GTM v1.0.0</footer>
+  <footer class="border-t border-gray-200 py-4 text-center text-xs text-gray-400">LinkedIn AI GTM v1.0.0</footer>
 </div>
 <script type="module" src="fullpage.js"></script>
 </body>

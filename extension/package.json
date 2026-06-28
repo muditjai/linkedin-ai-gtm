@@ -2,22 +2,27 @@
   "name": "linkedin-ai-gtm-extension",
   "version": "1.0.0",
   "description": "AI-powered outreach capabilities for LinkedIn",
-  "main": "src/popup.ts",
+  "main": "src/fullpage.ts",
   "scripts": {
-    "build": "tsc",
+    "build:css": "tailwindcss -i ./src/fullpage.css -o ./dist/fullpage.css --minify",
+    "build:ts": "tsc",
+    "build:copy": "node -e \"require('fs').copyFileSync('src/fullpage.html','dist/fullpage.html');require('fs').copyFileSync('manifest.json','dist/manifest.json');require('fs').copyFileSync('src/content/styles.css','dist/content/styles.css');\"",
+    "build": "npm run clean && npm run build:ts && npm run build:css && npm run build:copy",
     "watch": "tsc --watch",
     "package": "npm run build && zip -r releases/extension.zip dist",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.260",
+    "tailwindcss": "^3.4.0",
     "typescript": "^5.3.0"
   },
   "keywords": [
     "chrome-extension",
     "linkedin",
     "outreach",
-    "ai"
+    "ai",
+    "tailwindcss"
   ],
   "license": "MIT"
 }

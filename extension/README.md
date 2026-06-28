@@ -82,8 +82,29 @@ extension/
 ## Available Scripts
 
 ```bash
-npm run build    # Compile TypeScript → dist/
-npm run watch    # Continuous compilation for development
+npm run build       # Full build: clean → tsc → tailwindcss → copy static files
+npm run build:ts    # Compile TypeScript only
+npm run build:css   # Compile Tailwind CSS only
+npm run build:copy  # Copy HTML / manifest / content CSS into dist/
+npm run watch       # Continuous TypeScript compilation
+```
+
+The full `npm run build` produces an unpacked-ready extension at
+`extension/dist/` containing:
+
+```
+dist/
+├── background.js           # Service worker
+├── fullpage.html           # Full-page UI shell
+├── fullpage.css            # Compiled Tailwind output
+├── fullpage.js             # Page controller
+├── manifest.json
+├── content/
+│   ├── main.js
+│   └── styles.css
+├── handlers/               # Message handlers (background-side)
+├── modules/                # UI modules (page-side)
+└── utils/                  # Shared utilities
 ```
 
 ## Configuration
