@@ -93,6 +93,53 @@ interface ScrapeAllResponse extends ExtensionResponse {
   threadsScraped?: number;
 }
 
+/**
+ * Phase of a SCRAPE_ALL progress event. Mirrors `ScrapeProgressPhase` in
+ * `../types.ts` - kept as a local copy because content scripts cannot use
+ * ES module syntax (see the file header).
+ */
+type ScrapeProgressPhase =
+  | 'started'
+  | 'thread_done'
+  | 'thread_failed'
+  | 'finished';
+
+/**
+ * Push a progress update out to the background so the full-page UI can
+ * render a live progress bar. Failures are swallowed (this is a best-effort
+ * side-channel; the SCRAPE_ALL response itself carries the authoritative
+ * data).
+ *
+ * The full-page UI listens on `chrome.runtime.onMessage`. The background
+ * forwards this message to every open extension page.
+ */
+function emitScrapeProgress(payload: {
+  phase: ScrapeProgressPhase;
+  current: number;
+  total: number;
+  completed: number;
+  failed: number;
+  currentName?: string;
+  currentUrn?: string;
+  message?: string;
+}): void {
+  try {
+    chrome.runtime.sendMessage(
+      {
+        type: 'SCRAPE_PROGRESS',
+        ...payload,
+      },
+      () => {
+        // Swallow "no receiver" errors: progress events are advisory and
+        // the background may be asleep in MV3 when the first event fires.
+        void chrome.runtime.lastError;
+      },
+    );
+  } catch (err) {
+    console.warn('[Content] Failed to emit SCRAPE_PROGRESS:', err);
+  }
+}
+
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const LOADED_FLAG = '__linkedinAiGtmContentLoaded';
@@ -830,9 +877,26 @@ async function scrapeAll(cap: number = 0): Promise<ScrapeAllResponse> {
   //    (marking items read, adding active state, etc.) and our captured
   //    references would otherwise be stale.
   const threads: Record<string, ConversationMessage[]> = {};
+
+  // Announce the start so the UI can show the progress bar before the
+  // first SPA click. When `safeCap === 0` (inbox-only scrape) there's
+  // nothing to iterate, so we skip the "started" event entirely to
+  // avoid showing a 0/total bar.
+  if (safeCap > 0) {
+    emitScrapeProgress({
+      phase: 'started',
+      current: 0,
+      total: safeCap,
+      completed: 0,
+      failed: 0,
+      message: `Scraping ${safeCap} conversation${safeCap === 1 ? '' : 's'}…`,
+    });
+  }
+
   const totalThreadMessages = await scrapeThreadsByClicking(
     safeCap,
     threads,
+    (event) => emitScrapeProgress(event),
   );
 
   const threadsScraped = Object.keys(threads).length;
@@ -845,6 +909,17 @@ async function scrapeAll(cap: number = 0): Promise<ScrapeAllResponse> {
     totalThreadMessages,
     'total messages',
   );
+
+  if (safeCap > 0) {
+    emitScrapeProgress({
+      phase: 'finished',
+      current: safeCap,
+      total: safeCap,
+      completed: threadsScraped,
+      failed: Math.max(0, safeCap - threadsScraped),
+      message: `Done: ${threadsScraped}/${safeCap} threads scraped.`,
+    });
+  }
 
   return {
     success: true,
@@ -888,10 +963,29 @@ async function waitForMessageList(
  * scrape their full message threads. Populates the `threads` map keyed
  * by LinkedIn URN. Returns the total message count across all scraped
  * threads.
+ *
+ * After every iteration the optional `onProgress` callback is invoked so
+ * the caller can stream progress events out to the UI. We invoke it with
+ * one of three phases:
+ *   - `'thread_done'`   when messages were successfully extracted,
+ *   - `'thread_failed'` when the iteration was skipped (no link, navigation
+ *                        timeout, or the message list produced 0 messages),
+ *   - `'thread_done'`   again for the trailing `cap === 0` short-circuit
+ *                        when the currently-open thread was captured.
  */
 async function scrapeThreadsByClicking(
   cap: number,
   threads: Record<string, ConversationMessage[]>,
+  onProgress?: (event: {
+    phase: ScrapeProgressPhase;
+    current: number;
+    total: number;
+    completed: number;
+    failed: number;
+    currentName?: string;
+    currentUrn?: string;
+    message?: string;
+  }) => void,
 ): Promise<number> {
   if (cap <= 0) {
     // cap === 0 means "don't auto-click"; pick up the currently-open
@@ -907,6 +1001,8 @@ async function scrapeThreadsByClicking(
   }
 
   let totalMessages = 0;
+  let completed = 0;
+  let failed = 0;
   for (let i = 0; i < cap; i += 1) {
     // ALWAYS re-query the conversation items; sidebar DOM is unstable
     // across SPA navigations.
@@ -919,16 +1015,42 @@ async function scrapeThreadsByClicking(
         liveItems.length,
         'items); stopping thread loop',
       );
+      // Treat the remaining slots as failures so the progress bar reflects
+      // the full intended `cap` rather than freezing mid-way.
+      failed += cap - i;
+      onProgress?.({
+        phase: 'thread_failed',
+        current: i + 1,
+        total: cap,
+        completed,
+        failed,
+        message: `Stopped at ${i + 1}/${cap}: sidebar shrank.`,
+      });
       break;
     }
     const item = liveItems[i];
     const link = pickConversationLink(item);
+    // Best-effort name resolution for the progress label. Falls back to
+    // "Conversation N" so we always have *something* to show.
+    const currentName =
+      extractConversation(item, i)?.name ?? `Conversation ${i + 1}`;
+
     if (!link) {
       console.warn(
         '[Content] No clickable link for conversation',
         i,
         '- skipping',
       );
+      failed += 1;
+      onProgress?.({
+        phase: 'thread_failed',
+        current: i + 1,
+        total: cap,
+        completed,
+        failed,
+        currentName,
+        message: `Skipped ${currentName} (no clickable link).`,
+      });
       continue;
     }
 
@@ -944,6 +1066,16 @@ async function scrapeThreadsByClicking(
         i + 1,
         'did not navigate, continuing to next',
       );
+      failed += 1;
+      onProgress?.({
+        phase: 'thread_failed',
+        current: i + 1,
+        total: cap,
+        completed,
+        failed,
+        currentName,
+        message: `Skipped ${currentName} (no navigation).`,
+      });
       continue;
     }
 
@@ -957,6 +1089,16 @@ async function scrapeThreadsByClicking(
         i + 1,
         'navigated but message list never appeared; skipping',
       );
+      failed += 1;
+      onProgress?.({
+        phase: 'thread_failed',
+        current: i + 1,
+        total: cap,
+        completed,
+        failed,
+        currentName,
+        message: `Skipped ${currentName} (no message list).`,
+      });
       continue;
     }
 
@@ -1007,6 +1149,7 @@ async function scrapeThreadsByClicking(
       const urn = getThreadId();
       threads[urn] = messagesFromNodeList;
       totalMessages += messagesFromNodeList.length;
+      completed += 1;
       console.log(
         '[Content] Thread',
         i + 1,
@@ -1016,12 +1159,32 @@ async function scrapeThreadsByClicking(
         urn,
         ')',
       );
+      onProgress?.({
+        phase: 'thread_done',
+        current: i + 1,
+        total: cap,
+        completed,
+        failed,
+        currentName,
+        currentUrn: urn,
+        message: `Thread ${i + 1}/${cap} scraped (${messagesFromNodeList.length} messages).`,
+      });
     } else {
       console.warn(
         '[Content] Thread',
         i + 1,
         'scrape produced 0 messages, continuing to next',
       );
+      failed += 1;
+      onProgress?.({
+        phase: 'thread_failed',
+        current: i + 1,
+        total: cap,
+        completed,
+        failed,
+        currentName,
+        message: `Skipped ${currentName} (no messages).`,
+      });
     }
 
     // Don't sleep after the LAST thread - we're done.

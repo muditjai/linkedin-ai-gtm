@@ -61,6 +61,22 @@
           <button id="btnScrapeAll" class="btn-primary">Scrape All</button>
           <button id="btnTestConnection" class="btn-secondary">Test Connection</button>
         </div>
+
+        <!-- Scrape progress bar.
+             Hidden by default. `fullpage.ts` reveals it when a SCRAPE_ALL
+             begins and the content script starts streaming SCRAPE_PROGRESS
+             events. The label + count + filled bar all update live as
+             each conversation is opened + scraped. -->
+        <div id="scrapeProgress" class="mb-4 hidden" aria-live="polite">
+          <div class="mb-1 flex items-center justify-between text-xs">
+            <span id="scrapeProgressLabel" class="truncate font-medium text-gray-700">Preparing scrape…</span>
+            <span id="scrapeProgressCount" class="ml-2 shrink-0 font-mono text-gray-500">0/0</span>
+          </div>
+          <div class="h-2 w-full overflow-hidden rounded-full bg-gray-200">
+            <div id="scrapeProgressBar" class="h-full w-0 rounded-full bg-brand-600 transition-all duration-300 ease-out" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+          </div>
+        </div>
+
         <p class="mb-4 text-xs text-amber-700">
           ⚠ Scraping conversations clicks through each entry in your inbox to read its full message history (the thread). Aggressive use may trigger LinkedIn rate limiting. The default cap is 5 conversations / 2&nbsp;s apart. If you scrape many conversations in a short window, LinkedIn may flag the session.
         </p>

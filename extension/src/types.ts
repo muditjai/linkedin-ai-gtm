@@ -18,7 +18,11 @@ export type MessageType =
   | 'OPEN_FULL_APP'
   | 'SCRAPE_MESSAGES'
   | 'GET_PAGE_INFO'
-  | 'HIGHLIGHT_CONVERSATION';
+  | 'HIGHLIGHT_CONVERSATION'
+  /** Emitted from the content script while a SCRAPE_ALL is running. The
+   *  background forwards it to the full-page UI which renders a progress
+   *  bar so the user can see how many threads have completed. */
+  | 'SCRAPE_PROGRESS';
 
 export interface ExtensionMessage {
   type: MessageType;
@@ -170,6 +174,44 @@ export interface PopupState {
 }
 
 /* ---------------------------------------------------------------------------
+ * Scrape progress
+ *
+ * Emitted from the content script while a SCRAPE_ALL is running so the
+ * full-page UI can render a live progress bar. The background forwards
+ * every message it receives with `type === 'SCRAPE_PROGRESS'` to all
+ * listening extension pages via `chrome.runtime.sendMessage`.
+ * ------------------------------------------------------------------------- */
+export type ScrapeProgressPhase =
+  /** Emitted once at the start of a SCRAPE_ALL, before any thread is opened. */
+  | 'started'
+  /** Emitted after each conversation in the inbox has been opened + scraped. */
+  | 'thread_done'
+  /** Emitted after each conversation in the inbox has been opened + failed. */
+  | 'thread_failed'
+  /** Emitted once after the SCRAPE_ALL response is fully assembled. */
+  | 'finished';
+
+export interface ScrapeProgressMessage {
+  type: 'SCRAPE_PROGRESS';
+  /** Current phase of the scrape lifecycle. */
+  phase: ScrapeProgressPhase;
+  /** 1-based index of the thread currently in flight (or just completed). */
+  current: number;
+  /** Total number of threads the scraper intends to open. */
+  total: number;
+  /** Number of threads that have been successfully scraped so far. */
+  completed: number;
+  /** Number of threads that have failed so far. */
+  failed: number;
+  /** Display name of the thread currently being scraped, when known. */
+  currentName?: string;
+  /** LinkedIn URN of the thread currently being scraped, when known. */
+  currentUrn?: string;
+  /** Optional human-readable status (e.g. "Scraping thread 2/5..."). */
+  message?: string;
+}
+
+/* ---------------------------------------------------------------------------
  * Activity log
  *
  * `fullpage.ts` wires up a DOM-backed activity log and exposes the writer
@@ -180,6 +222,11 @@ export interface PopupState {
 export type LogKind = 'info' | 'success' | 'error' | 'warn';
 export type StatusLogger = (message: string, kind?: LogKind) => void;
 export type ScrapeCounter = () => void;
+/** Show the scrape progress bar with the expected thread total. */
+export type ScrapeProgressStarter = (total: number) => void;
+/** Force-hide the scrape progress bar (the bar also auto-hides after a
+ *  short delay when the `finished` phase event arrives). */
+export type ScrapeProgressEnder = () => void;
 
 // Declare global
 declare global {
@@ -187,5 +234,7 @@ declare global {
     popupState: PopupState;
     logExtensionStatus?: StatusLogger;
     recordScrapeCount?: ScrapeCounter;
+    startScrapeProgress?: ScrapeProgressStarter;
+    endScrapeProgress?: ScrapeProgressEnder;
   }
 }

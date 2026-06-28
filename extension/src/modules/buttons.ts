@@ -90,6 +90,13 @@ async function scrapeAll(): Promise<void> {
     'info',
   );
 
+  // Reveal the progress bar up front so the user sees it before the
+  // first SCRAPE_PROGRESS event lands. The content script may not
+  // emit any events if `conversationLimit === 0` (inbox-only scrape)
+  // - we still show the bar briefly so the user knows the action
+  // was registered.
+  window.startScrapeProgress?.(conversationLimit);
+
   try {
     // The "Max conversations" input in the dashboard controls BOTH:
     //   1. how many inbox rows we keep (cap = conversationLimit)
@@ -207,6 +214,11 @@ async function scrapeAll(): Promise<void> {
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
+    // Belt-and-braces: hide the progress bar if the content script never
+    // emitted a `finished` event (e.g. SCRAPE_ALL failed before reaching
+    // it, or the LinkedIn tab is unreachable). The normal happy path
+    // already hides the bar on `finished`, so this is a no-op there.
+    window.endScrapeProgress?.();
   }
 }
 
