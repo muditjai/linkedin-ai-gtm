@@ -6,9 +6,42 @@
  * try/catch with explicit logging so we can see exactly where injection
  * fails, and sets `window.__linkedinAiGtmContentLoaded` once the listener
  * is registered so the background script can confirm the load.
+ *
+ * IMPORTANT: This file MUST NOT use ES module syntax (`import` / `export`).
+ * Chrome loads content scripts as regular scripts, not modules — a stray
+ * `export {}` token (which TypeScript auto-emits when the source file has
+ * any top-level `import` or `export`, even type-only ones) causes a
+ * SyntaxError and silently kills the script.
+ *
+ * `Conversation`, `ExtensionMessage`, and `ExtensionResponse` are therefore
+ * declared locally as plain `interface`s rather than imported from
+ * `../types.js`.
  */
 
-import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
+interface Conversation {
+  id: string;
+  name: string;
+  preview: string;
+  time: string;
+  avatar: string | null;
+  lastMessageAt: string;
+  unread: boolean;
+}
+
+interface ExtensionMessage {
+  type: string;
+  limit?: number;
+  [key: string]: unknown;
+}
+
+interface ExtensionResponse {
+  success: boolean;
+  conversations?: Conversation[];
+  error?: string;
+  count?: number;
+  message?: string;
+  [key: string]: unknown;
+}
 
 interface ScrapeConversationsResponse extends ExtensionResponse {
   conversations?: Conversation[];
@@ -18,13 +51,6 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const LOADED_FLAG = '__linkedinAiGtmContentLoaded';
 const LOADED_AT = '__linkedinAiGtmContentLoadedAt';
-
-declare global {
-  interface Window {
-    [LOADED_FLAG]?: boolean;
-    [LOADED_AT]?: number;
-  }
-}
 
 /* ---------------------------------------------------------------------------
  * Top-level error guards
@@ -50,8 +76,8 @@ function boot(): void {
     console.warn('[Content] Not a LinkedIn messaging page, will still register listener');
   }
 
-  window[LOADED_FLAG] = true;
-  window[LOADED_AT] = Date.now();
+  (window as unknown as Record<string, unknown>)[LOADED_FLAG] = true;
+  (window as unknown as Record<string, unknown>)[LOADED_AT] = Date.now();
   console.log('[Content] Listener registration starting');
 
   chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
