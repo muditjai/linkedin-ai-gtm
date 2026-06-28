@@ -12,3 +12,7 @@ coverage/
 .nyc_output/
 .idea/
 .vscode/
+
+# Test-only Python venv (created by `python3 -m venv backend/tests/.venv`).
+backend/tests/.venv/
+backend/tests/.venv-*/

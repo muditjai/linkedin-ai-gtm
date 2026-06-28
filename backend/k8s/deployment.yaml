@@ -1,12 +1,16 @@
 # Kubernetes Deployment + Service for the LinkedIn AI GTM service backend.
 #
-# Target cluster (from AGENTS.md):
-#   f3f8ebb0-4388-4a6f-9e36-3f3e60211c6b.k8s.ondigitalocean.com
+# Target cluster:
+#   f3f8ebb0-4388-4a6f-9e36-3f3e60211c6b.k8s.ondigitalocean.com (sfo2)
+#   kubectl context: do-sfo2-k8s-1-36-0-do-2-sfo2-1782660935646
 #
 # Apply:
 #   doctl kubernetes cluster kubeconfig save f3f8ebb0-4388-4a6f-9e36-3f3e60211c6b
-#   kubectl --context do-fra1-linkedin-ai apply -f backend/k8s/deployment.yaml
-#   kubectl --context do-fra1-linkedin-ai apply -f backend/k8s/secret.yaml
+#   kubectl create secret generic linkedin-ai-secrets \
+#     --from-literal=mongodb-uri='mongodb+srv://...' \
+#     --from-literal=gemini-api-key='AIza...' \
+#     --from-literal=do-inference-token='dop_v1_...'
+#   kubectl apply -f backend/k8s/deployment.yaml
 #
 # Verify:
 #   kubectl get pods -l app=linkedin-ai-backend
@@ -57,7 +61,7 @@ spec:
                   name: linkedin-ai-secrets
                   key: gemini-api-key
             - name: GEMINI_MODEL
-              value: gemini-1.5-pro
+              value: gemini-3.1-pro
             - name: DO_INFERENCE_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -113,11 +117,17 @@ metadata:
   labels:
     app: linkedin-ai-backend
 spec:
-  type: ClusterIP
+  # type=LoadBalancer -> DigitalOcean provisions a public IP for this
+  # Service. The Service's EXTERNAL-IP is what the Chrome extension and
+  # any external client should hit. healthCheckNodePort is set explicitly
+  # so DO can route health checks to a node port even when the pod is on
+  # the cluster-internal network.
+  type: LoadBalancer
+  externalTrafficPolicy: Cluster
   selector:
     app: linkedin-ai-backend
   ports:
     - name: http
-      port: 3000
+      port: 80
       targetPort: http
       protocol: TCP

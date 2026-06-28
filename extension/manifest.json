@@ -10,7 +10,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://*.linkedin.com/*"
+    "*://*.linkedin.com/*",
+    "http://138.197.236.196/*"
   ],
   "background": {
     "service_worker": "background.js",

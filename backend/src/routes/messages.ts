@@ -20,47 +20,22 @@ import { Thread } from '../models/Thread.js';
 const router = Router();
 
 const MessageInputSchema = z.object({
-  threadUrn: z.string().min(1),
-  conversationName: z.string().min(1),
-  conversationUrl: z.string().optional().default(''),
-  messages: z
-    .array(
-      z.object({
-        messageUrn: z.string().min(1),
-        direction: z.enum(['inbound', 'outbound']),
-        senderName: z.string().default(''),
-        content: z.string().default(''),
-        timestamp: z.string().default(''),
-        dateHeading: z.string().nullable().optional(),
-        edited: z.boolean().optional().default(false),
-        reactions: z.array(z.string()).optional().default([]),
-        sentAt: z
-          .string()
-          .datetime()
-          .nullable()
-          .optional(),
-      }),
-    )
-    .min(1, 'messages array must not be empty'),
+  messageUrn: z.string().min(1),
+  direction: z.enum(['inbound', 'outbound']),
+  senderName: z.string().default(''),
+  content: z.string().default(''),
+  timestamp: z.string().default(''),
+  dateHeading: z.string().nullable().optional(),
+  edited: z.boolean().optional().default(false),
+  reactions: z.array(z.string()).optional().default([]),
+  sentAt: z.string().datetime().nullable().optional(),
 });
 
 const MessagesBodySchema = z.object({
   threadUrn: z.string().min(1),
   conversationName: z.string().min(1),
   conversationUrl: z.string().optional().default(''),
-  messages: z.array(
-    z.object({
-      messageUrn: z.string().min(1),
-      direction: z.enum(['inbound', 'outbound']),
-      senderName: z.string().default(''),
-      content: z.string().default(''),
-      timestamp: z.string().default(''),
-      dateHeading: z.string().nullable().optional(),
-      edited: z.boolean().optional().default(false),
-      reactions: z.array(z.string()).optional().default([]),
-      sentAt: z.string().datetime().nullable().optional(),
-    }),
-  ),
+  messages: z.array(MessageInputSchema).min(1, 'messages array must not be empty'),
 });
 
 type UpsertSummary = {
@@ -91,15 +66,25 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     // partition into "new" vs "existing" for the response. Then run the
     // bulkWrite. The count check is O(N) but cheap thanks to the
     // (threadUrn, messageUrn) unique index.
-    const existing = await Message.find(
-      {
-        threadUrn,
-        messageUrn: { $in: messages.map((m) => m.messageUrn) },
-      },
-      { projection: { messageUrn: 1 } },
-    ).lean();
+    // IMPORTANT: Mongoose 8's `Model.find(filter, options)` treats the
+    // second argument as OPTIONS, not as a projection. Passing
+    // `{ projection: { messageUrn: 1 } }` is silently ignored, so every
+    // document came back with an empty selection — making `existingUrns`
+    // empty and breaking `newSinceLastScrape` on every re-scrape.
+    // Fix: use the chainable `.select()` API, which always works.
+    const existing = await Message.find({
+      threadUrn,
+      messageUrn: { $in: messages.map((m) => m.messageUrn) },
+    })
+      .select({ messageUrn: 1, _id: 0 })
+      .lean();
 
-    const existingUrns = new Set(existing.map((d) => d.messageUrn));
+    const existingUrns = new Set<string>(
+      existing.map((d) => (d as { messageUrn?: string }).messageUrn ?? ''),
+    );
+    // Drop the empty-string entry so we never mark a real URN as
+    // "existing" because of a missing field.
+    existingUrns.delete('');
     const newSinceLastScrape: string[] = [];
     for (const m of messages) {
       if (!existingUrns.has(m.messageUrn)) {

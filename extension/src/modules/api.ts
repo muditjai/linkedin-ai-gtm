@@ -6,8 +6,10 @@
  * user can point the extension at a different environment (dev, staging,
  * prod) without rebuilding.
  *
- * If no URL is configured, fall back to `http://localhost:3000` for
- * dev convenience.
+ * The default URL points at the production backend running on DigitalOcean
+ * Kubernetes (public LoadBalancer in sfo2). To point at a local dev
+ * backend instead, set:
+ *   chrome.storage.local.set({ BACKEND_URL: 'http://localhost:3000' })
  *
  * Every method returns `null` on network/5xx failure so the caller can
  * degrade gracefully (the extension must keep working when the backend
@@ -17,7 +19,10 @@
 import type { ConversationMessage } from '../types.js';
 
 const STORAGE_KEY = 'BACKEND_URL';
-const DEFAULT_BACKEND_URL = 'http://localhost:3000';
+// Default -> DO k8s LoadBalancer in sfo2 (env=production, db=linkedin-ai
+// on Atlas cluster0). Override per-environment via chrome.storage.local
+// (see the docblock above).
+const DEFAULT_BACKEND_URL = 'http://138.197.236.196';
 
 let cachedBase: string | null = null;
 

@@ -37,7 +37,7 @@ const envSchema = z.object({
   GEMINI_API_KEY: z
     .string()
     .min(1, 'GEMINI_API_KEY is required (get one at https://aistudio.google.com/app/apikey)'),
-  GEMINI_MODEL: z.string().min(1).default('gemini-1.5-pro'),
+  GEMINI_MODEL: z.string().min(1).default('gemini-3.1-pro'),
 
   DO_INFERENCE_TOKEN: z.string().optional().default(''),
   DO_INFERENCE_BASE_URL: z

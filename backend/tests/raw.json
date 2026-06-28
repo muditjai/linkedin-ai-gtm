@@ -1,0 +1,928 @@
+{
+  "base": "http://138.197.236.196",
+  "started_at": "2026-06-28 13:53:24 ",
+  "finished_at": "2026-06-28 13:53:25 ",
+  "passed": 30,
+  "failed": 1,
+  "total": 31,
+  "cases": [
+    {
+      "section": "1. Health",
+      "name": "health",
+      "method": "GET",
+      "path": "/health",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 49.94,
+      "error": null,
+      "body": {
+        "success": true,
+        "status": "ok",
+        "env": "production",
+        "ai": {
+          "gemini": "gemini-3.1-pro",
+          "doInference": "disabled"
+        }
+      }
+    },
+    {
+      "section": "2. /api/messages POST - happy path",
+      "name": "insert 3 msgs into thread-A",
+      "method": "POST",
+      "path": "/api/messages",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 58.03,
+      "error": null,
+      "body": {
+        "success": true,
+        "summary": {
+          "threadUrn": "thread-A",
+          "inserted": [],
+          "updated": [
+            "msg-1",
+            "msg-2",
+            "msg-3"
+          ],
+          "unchanged": [],
+          "newSinceLastScrape": [],
+          "totalMessages": 3
+        },
+        "counts": {
+          "inserted": 0,
+          "matched": 3,
+          "modified": 3,
+          "newSinceLastScrapeCount": 0
+        }
+      }
+    },
+    {
+      "section": "2. /api/messages POST - happy path",
+      "name": "re-upsert msg-2/3 + new msg-4",
+      "method": "POST",
+      "path": "/api/messages",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 57.2,
+      "error": null,
+      "body": {
+        "success": true,
+        "summary": {
+          "threadUrn": "thread-A",
+          "inserted": [],
+          "updated": [
+            "msg-2",
+            "msg-3",
+            "msg-4"
+          ],
+          "unchanged": [],
+          "newSinceLastScrape": [],
+          "totalMessages": 3
+        },
+        "counts": {
+          "inserted": 0,
+          "matched": 3,
+          "modified": 3,
+          "newSinceLastScrapeCount": 0
+        }
+      }
+    },
+    {
+      "section": "2. /api/messages POST - happy path",
+      "name": "insert 2 msgs into thread-B",
+      "method": "POST",
+      "path": "/api/messages",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 52.91,
+      "error": null,
+      "body": {
+        "success": true,
+        "summary": {
+          "threadUrn": "thread-B",
+          "inserted": [],
+          "updated": [
+            "msg-1",
+            "msg-2"
+          ],
+          "unchanged": [],
+          "newSinceLastScrape": [],
+          "totalMessages": 2
+        },
+        "counts": {
+          "inserted": 0,
+          "matched": 2,
+          "modified": 2,
+          "newSinceLastScrapeCount": 0
+        }
+      }
+    },
+    {
+      "section": "3. /api/messages POST - validation errors",
+      "name": "missing threadUrn",
+      "method": "POST",
+      "path": "/api/messages",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 41.62,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "invalid_type",
+            "expected": "string",
+            "received": "undefined",
+            "path": [
+              "threadUrn"
+            ],
+            "message": "Required"
+          }
+        ]
+      }
+    },
+    {
+      "section": "3. /api/messages POST - validation errors",
+      "name": "empty messages array",
+      "method": "POST",
+      "path": "/api/messages",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 40.21,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "too_small",
+            "minimum": 1,
+            "type": "array",
+            "inclusive": true,
+            "exact": false,
+            "message": "messages array must not be empty",
+            "path": [
+              "messages"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "section": "3. /api/messages POST - validation errors",
+      "name": "bad direction enum",
+      "method": "POST",
+      "path": "/api/messages",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 41.89,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "received": "sideways",
+            "code": "invalid_enum_value",
+            "options": [
+              "inbound",
+              "outbound"
+            ],
+            "path": [
+              "messages",
+              0,
+              "direction"
+            ],
+            "message": "Invalid enum value. Expected 'inbound' | 'outbound', received 'sideways'"
+          }
+        ]
+      }
+    },
+    {
+      "section": "4. /api/messages GET - read messages",
+      "name": "list thread-A",
+      "method": "GET",
+      "path": "/api/messages?threadUrn=thread-A",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 52.45,
+      "error": null,
+      "body": {
+        "success": true,
+        "threadUrn": "thread-A",
+        "count": 4,
+        "messages": [
+          {
+            "_id": "6a4185316b84e782d5231bc3",
+            "threadUrn": "thread-A",
+            "messageUrn": "msg-1",
+            "__v": 0,
+            "content": "Hey, are you free Thursday for a quick sync?",
+            "conversationName": "Alice Smith",
+            "conversationUrl": "https://www.linkedin.com/in/alice-smith",
+            "createdAt": "2026-06-28T20:33:53.697Z",
+            "dateHeading": null,
+            "direction": "inbound",
+            "edited": false,
+            "reactions": [],
+            "scrapedAt": "2026-06-28T20:53:24.371Z",
+            "senderName": "Alice",
+            "sentAt": "2026-06-28T17:01:00.000Z",
+            "timestamp": "10:01 AM",
+            "updatedAt": "2026-06-28T20:53:24.371Z"
+          },
+          {
+            "_id": "6a4185316b84e782d5231bc4",
+            "threadUrn": "thread-A",
+            "messageUrn": "msg-2",
+            "__v": 0,
+            "content": "Yes - 2pm works.",
+            "conversationName": "Alice Smith",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.697Z",
+            "dateHeading": null,
+            "direction": "outbound",
+            "edited": false,
+            "reactions": [],
+            "scrapedAt": "2026-06-28T20:53:24.429Z",
+            "senderName": "Me",
+            "sentAt": "2026-06-28T17:05:00.000Z",
+            "timestamp": "10:05 AM",
+            "updatedAt": "2026-06-28T20:53:24.429Z"
+          },
+          {
+            "_id": "6a4185316b84e782d5231bc5",
+            "threadUrn": "thread-A",
+            "messageUrn": "msg-3",
+            "__v": 0,
+            "content": "Just bring yourself.",
+            "conversationName": "Alice Smith",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.697Z",
+            "dateHeading": null,
+            "direction": "inbound",
+            "edited": false,
+            "reactions": [],
+            "scrapedAt": "2026-06-28T20:53:24.429Z",
+            "senderName": "Alice",
+            "sentAt": "2026-06-28T17:07:00.000Z",
+            "timestamp": "10:07 AM",
+            "updatedAt": "2026-06-28T20:53:24.429Z"
+          },
+          {
+            "_id": "6a4185316b84e782d5231bc7",
+            "messageUrn": "msg-4",
+            "threadUrn": "thread-A",
+            "__v": 0,
+            "content": "Also, can you review my deck beforehand?",
+            "conversationName": "Alice Smith",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.765Z",
+            "dateHeading": null,
+            "direction": "inbound",
+            "edited": false,
+            "reactions": [],
+            "scrapedAt": "2026-06-28T20:53:24.429Z",
+            "senderName": "Alice",
+            "sentAt": "2026-06-28T17:09:00.000Z",
+            "timestamp": "10:09 AM",
+            "updatedAt": "2026-06-28T20:53:24.429Z"
+          }
+        ]
+      }
+    },
+    {
+      "section": "4. /api/messages GET - read messages",
+      "name": "list thread-B",
+      "method": "GET",
+      "path": "/api/messages?threadUrn=thread-B",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 43.47,
+      "error": null,
+      "body": {
+        "success": true,
+        "threadUrn": "thread-B",
+        "count": 2,
+        "messages": [
+          {
+            "_id": "6a4185316b84e782d5231bc8",
+            "threadUrn": "thread-B",
+            "messageUrn": "msg-1",
+            "__v": 0,
+            "content": "Saw your post - loved it.",
+            "conversationName": "Bob Jones",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.824Z",
+            "dateHeading": null,
+            "direction": "inbound",
+            "edited": false,
+            "reactions": [],
+            "scrapedAt": "2026-06-28T20:53:24.484Z",
+            "senderName": "Bob",
+            "sentAt": "2026-06-28T16:00:00.000Z",
+            "timestamp": "9:00 AM",
+            "updatedAt": "2026-06-28T20:53:24.484Z"
+          },
+          {
+            "_id": "6a4185316b84e782d5231bc9",
+            "threadUrn": "thread-B",
+            "messageUrn": "msg-2",
+            "__v": 0,
+            "content": "Thanks Bob!",
+            "conversationName": "Bob Jones",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.824Z",
+            "dateHeading": null,
+            "direction": "outbound",
+            "edited": false,
+            "reactions": [],
+            "scrapedAt": "2026-06-28T20:53:24.484Z",
+            "senderName": "Me",
+            "sentAt": "2026-06-28T16:30:00.000Z",
+            "timestamp": "9:30 AM",
+            "updatedAt": "2026-06-28T20:53:24.484Z"
+          }
+        ]
+      }
+    },
+    {
+      "section": "4. /api/messages GET - read messages",
+      "name": "missing threadUrn -> 400",
+      "method": "GET",
+      "path": "/api/messages",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 40.04,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "threadUrn is required"
+      }
+    },
+    {
+      "section": "4. /api/messages GET - read messages",
+      "name": "unknown thread -> 200 empty",
+      "method": "GET",
+      "path": "/api/messages?threadUrn=does-not-exist",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 44.46,
+      "error": null,
+      "body": {
+        "success": true,
+        "threadUrn": "does-not-exist",
+        "count": 0,
+        "messages": []
+      }
+    },
+    {
+      "section": "5. /api/threads",
+      "name": "list top threads (limit=15)",
+      "method": "GET",
+      "path": "/api/threads?limit=15",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 44.94,
+      "error": null,
+      "body": {
+        "success": true,
+        "count": 3,
+        "threads": [
+          {
+            "_id": "6a4185316b84e782d5231bca",
+            "urn": "thread-B",
+            "__v": 0,
+            "conversationName": "Bob Jones",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.837Z",
+            "inboundCount": 1,
+            "lastInboundPreview": "Thanks Bob!",
+            "lastMessageIsInbound": false,
+            "lastMessageTime": "9:30 AM",
+            "lastScrapedAt": "2026-06-28T20:53:24.484Z",
+            "outboundCount": 1,
+            "updatedAt": "2026-06-28T20:53:24.494Z"
+          },
+          {
+            "_id": "6a4185316b84e782d5231bc6",
+            "urn": "thread-A",
+            "__v": 0,
+            "conversationName": "Alice Smith",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.713Z",
+            "inboundCount": 2,
+            "lastInboundPreview": "Also, can you review my deck beforehand?",
+            "lastMessageIsInbound": true,
+            "lastMessageTime": "10:09 AM",
+            "lastScrapedAt": "2026-06-28T20:53:24.429Z",
+            "outboundCount": 1,
+            "updatedAt": "2026-06-28T20:53:24.440Z"
+          },
+          {
+            "_id": "6a4185236b84e782d5231bc2",
+            "urn": "thread-LB-1",
+            "__v": 0,
+            "conversationName": "LB Test",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:39.621Z",
+            "inboundCount": 1,
+            "lastInboundPreview": "hello from public LB",
+            "lastMessageIsInbound": true,
+            "lastMessageTime": "now",
+            "lastScrapedAt": "2026-06-28T20:33:39.571Z",
+            "outboundCount": 0,
+            "updatedAt": "2026-06-28T20:33:39.621Z"
+          }
+        ]
+      }
+    },
+    {
+      "section": "5. /api/threads",
+      "name": "list top threads (limit=1)",
+      "method": "GET",
+      "path": "/api/threads?limit=1",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 46.47,
+      "error": null,
+      "body": {
+        "success": true,
+        "count": 1,
+        "threads": [
+          {
+            "_id": "6a4185316b84e782d5231bca",
+            "urn": "thread-B",
+            "__v": 0,
+            "conversationName": "Bob Jones",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.837Z",
+            "inboundCount": 1,
+            "lastInboundPreview": "Thanks Bob!",
+            "lastMessageIsInbound": false,
+            "lastMessageTime": "9:30 AM",
+            "lastScrapedAt": "2026-06-28T20:53:24.484Z",
+            "outboundCount": 1,
+            "updatedAt": "2026-06-28T20:53:24.494Z"
+          }
+        ]
+      }
+    },
+    {
+      "section": "5. /api/threads",
+      "name": "limit clamped to 100",
+      "method": "GET",
+      "path": "/api/threads?limit=999",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 44.27,
+      "error": null,
+      "body": {
+        "success": true,
+        "count": 3,
+        "threads": [
+          {
+            "_id": "6a4185316b84e782d5231bca",
+            "urn": "thread-B",
+            "__v": 0,
+            "conversationName": "Bob Jones",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.837Z",
+            "inboundCount": 1,
+            "lastInboundPreview": "Thanks Bob!",
+            "lastMessageIsInbound": false,
+            "lastMessageTime": "9:30 AM",
+            "lastScrapedAt": "2026-06-28T20:53:24.484Z",
+            "outboundCount": 1,
+            "updatedAt": "2026-06-28T20:53:24.494Z"
+          },
+          {
+            "_id": "6a4185316b84e782d5231bc6",
+            "urn": "thread-A",
+            "__v": 0,
+            "conversationName": "Alice Smith",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:53.713Z",
+            "inboundCount": 2,
+            "lastInboundPreview": "Also, can you review my deck beforehand?",
+            "lastMessageIsInbound": true,
+            "lastMessageTime": "10:09 AM",
+            "lastScrapedAt": "2026-06-28T20:53:24.429Z",
+            "outboundCount": 1,
+            "updatedAt": "2026-06-28T20:53:24.440Z"
+          },
+          {
+            "_id": "6a4185236b84e782d5231bc2",
+            "urn": "thread-LB-1",
+            "__v": 0,
+            "conversationName": "LB Test",
+            "conversationUrl": "",
+            "createdAt": "2026-06-28T20:33:39.621Z",
+            "inboundCount": 1,
+            "lastInboundPreview": "hello from public LB",
+            "lastMessageIsInbound": true,
+            "lastMessageTime": "now",
+            "lastScrapedAt": "2026-06-28T20:33:39.571Z",
+            "outboundCount": 0,
+            "updatedAt": "2026-06-28T20:33:39.621Z"
+          }
+        ]
+      }
+    },
+    {
+      "section": "5. /api/threads",
+      "name": "fetch single thread-A",
+      "method": "GET",
+      "path": "/api/threads/thread-A",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 41.93,
+      "error": null,
+      "body": {
+        "success": true,
+        "thread": {
+          "_id": "6a4185316b84e782d5231bc6",
+          "urn": "thread-A",
+          "__v": 0,
+          "conversationName": "Alice Smith",
+          "conversationUrl": "",
+          "createdAt": "2026-06-28T20:33:53.713Z",
+          "inboundCount": 2,
+          "lastInboundPreview": "Also, can you review my deck beforehand?",
+          "lastMessageIsInbound": true,
+          "lastMessageTime": "10:09 AM",
+          "lastScrapedAt": "2026-06-28T20:53:24.429Z",
+          "outboundCount": 1,
+          "updatedAt": "2026-06-28T20:53:24.440Z"
+        }
+      }
+    },
+    {
+      "section": "5. /api/threads",
+      "name": "fetch missing thread -> 404",
+      "method": "GET",
+      "path": "/api/threads/does-not-exist",
+      "expected_status": 404,
+      "actual_status": 404,
+      "elapsed_ms": 45.46,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "thread not found",
+        "urn": "does-not-exist"
+      }
+    },
+    {
+      "section": "6. /api/feedback POST",
+      "name": "submit feedback 5/5",
+      "method": "POST",
+      "path": "/api/feedback",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 49.54,
+      "error": null,
+      "body": {
+        "success": true,
+        "feedback": {
+          "_id": "6a4185326b84e782d5231bcb",
+          "messageUrn": "msg-4",
+          "threadUrn": "thread-A",
+          "__v": 0,
+          "comment": "Tone matches my usual voice, good call to action.",
+          "createdAt": "2026-06-28T20:33:54.429Z",
+          "draft": "Happy to take a look - sending notes by EOD Thursday.",
+          "model": "gemini-3.1-pro",
+          "score": 5,
+          "sentiment": "positive",
+          "updatedAt": "2026-06-28T20:53:25.063Z"
+        }
+      }
+    },
+    {
+      "section": "6. /api/feedback POST",
+      "name": "submit feedback 2/5",
+      "method": "POST",
+      "path": "/api/feedback",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 49.16,
+      "error": null,
+      "body": {
+        "success": true,
+        "feedback": {
+          "_id": "6a4185326b84e782d5231bcc",
+          "messageUrn": "msg-3",
+          "threadUrn": "thread-A",
+          "__v": 0,
+          "comment": "Too short, add a concrete next step.",
+          "createdAt": "2026-06-28T20:33:54.481Z",
+          "draft": "Sounds good!",
+          "model": "gemini-3.1-pro",
+          "score": 2,
+          "sentiment": "positive",
+          "updatedAt": "2026-06-28T20:53:25.113Z"
+        }
+      }
+    },
+    {
+      "section": "6. /api/feedback POST",
+      "name": "submit feedback 4/5 with empty messageUrn",
+      "method": "POST",
+      "path": "/api/feedback",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 48.19,
+      "error": null,
+      "body": {
+        "success": true,
+        "feedback": {
+          "_id": "6a4185326b84e782d5231bcd",
+          "draft": "Another draft for thread-A.",
+          "threadUrn": "thread-A",
+          "__v": 0,
+          "comment": "Fine but a little stiff.",
+          "createdAt": "2026-06-28T20:33:54.530Z",
+          "messageUrn": "",
+          "model": "gemini-3.1-pro",
+          "score": 4,
+          "sentiment": "neutral",
+          "updatedAt": "2026-06-28T20:53:25.162Z"
+        }
+      }
+    },
+    {
+      "section": "6. /api/feedback POST",
+      "name": "score=0 below min -> 400",
+      "method": "POST",
+      "path": "/api/feedback",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 41.82,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "too_small",
+            "minimum": 1,
+            "type": "number",
+            "inclusive": true,
+            "exact": false,
+            "message": "Number must be greater than or equal to 1",
+            "path": [
+              "score"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "section": "6. /api/feedback POST",
+      "name": "score=6 above max -> 400",
+      "method": "POST",
+      "path": "/api/feedback",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 40.99,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "too_big",
+            "maximum": 5,
+            "type": "number",
+            "inclusive": true,
+            "exact": false,
+            "message": "Number must be less than or equal to 5",
+            "path": [
+              "score"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "section": "6. /api/feedback POST",
+      "name": "missing threadUrn -> 400",
+      "method": "POST",
+      "path": "/api/feedback",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 42.14,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "invalid_type",
+            "expected": "string",
+            "received": "undefined",
+            "path": [
+              "threadUrn"
+            ],
+            "message": "Required"
+          }
+        ]
+      }
+    },
+    {
+      "section": "7. /api/feedback GET",
+      "name": "list feedback for thread-A",
+      "method": "GET",
+      "path": "/api/feedback?threadUrn=thread-A",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 46.06,
+      "error": null,
+      "body": {
+        "success": true,
+        "count": 3,
+        "feedback": [
+          {
+            "_id": "6a4185326b84e782d5231bcd",
+            "draft": "Another draft for thread-A.",
+            "threadUrn": "thread-A",
+            "__v": 0,
+            "comment": "Fine but a little stiff.",
+            "createdAt": "2026-06-28T20:33:54.530Z",
+            "messageUrn": "",
+            "model": "gemini-3.1-pro",
+            "score": 4,
+            "sentiment": "neutral",
+            "updatedAt": "2026-06-28T20:53:25.162Z"
+          },
+          {
+            "_id": "6a4185326b84e782d5231bcc",
+            "messageUrn": "msg-3",
+            "threadUrn": "thread-A",
+            "__v": 0,
+            "comment": "Too short, add a concrete next step.",
+            "createdAt": "2026-06-28T20:33:54.481Z",
+            "draft": "Sounds good!",
+            "model": "gemini-3.1-pro",
+            "score": 2,
+            "sentiment": "positive",
+            "updatedAt": "2026-06-28T20:53:25.113Z"
+          },
+          {
+            "_id": "6a4185326b84e782d5231bcb",
+            "messageUrn": "msg-4",
+            "threadUrn": "thread-A",
+            "__v": 0,
+            "comment": "Tone matches my usual voice, good call to action.",
+            "createdAt": "2026-06-28T20:33:54.429Z",
+            "draft": "Happy to take a look - sending notes by EOD Thursday.",
+            "model": "gemini-3.1-pro",
+            "score": 5,
+            "sentiment": "positive",
+            "updatedAt": "2026-06-28T20:53:25.063Z"
+          }
+        ]
+      }
+    },
+    {
+      "section": "7. /api/feedback GET",
+      "name": "missing threadUrn -> 400",
+      "method": "GET",
+      "path": "/api/feedback",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 38.65,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "threadUrn is required"
+      }
+    },
+    {
+      "section": "7. /api/feedback GET",
+      "name": "unknown thread -> 200 empty",
+      "method": "GET",
+      "path": "/api/feedback?threadUrn=does-not-exist",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 44.14,
+      "error": null,
+      "body": {
+        "success": true,
+        "count": 0,
+        "feedback": []
+      }
+    },
+    {
+      "section": "8. /api/draft",
+      "name": "draft reply (real Gemini call)",
+      "method": "POST",
+      "path": "/api/draft",
+      "expected_status": 200,
+      "actual_status": 500,
+      "elapsed_ms": 204.88,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "[GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro:generateContent: [404 Not Found] models/gemini-3.1-pro is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods."
+      }
+    },
+    {
+      "section": "8. /api/draft",
+      "name": "empty messages -> 400",
+      "method": "POST",
+      "path": "/api/draft",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 39.94,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "too_small",
+            "minimum": 1,
+            "type": "array",
+            "inclusive": true,
+            "exact": false,
+            "message": "Array must contain at least 1 element(s)",
+            "path": [
+              "messages"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "section": "8. /api/draft",
+      "name": "missing threadUrn -> 400",
+      "method": "POST",
+      "path": "/api/draft",
+      "expected_status": 400,
+      "actual_status": 400,
+      "elapsed_ms": 42.83,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Invalid request body",
+        "details": [
+          {
+            "code": "invalid_type",
+            "expected": "string",
+            "received": "undefined",
+            "path": [
+              "threadUrn"
+            ],
+            "message": "Required"
+          }
+        ]
+      }
+    },
+    {
+      "section": "9. /api/agent (LangGraph stub)",
+      "name": "POST /decide returns 501",
+      "method": "POST",
+      "path": "/api/agent/decide",
+      "expected_status": 501,
+      "actual_status": 501,
+      "elapsed_ms": 39.05,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Agent backend not yet wired up. The LangGraph / DigitalOcean ADK service will be deployed separately per AGENTS.md. For now use /api/draft for AI-suggested replies.",
+        "code": "AGENT_NOT_IMPLEMENTED"
+      }
+    },
+    {
+      "section": "9. /api/agent (LangGraph stub)",
+      "name": "GET /status",
+      "method": "GET",
+      "path": "/api/agent/status",
+      "expected_status": 200,
+      "actual_status": 200,
+      "elapsed_ms": 39.15,
+      "error": null,
+      "body": {
+        "success": true,
+        "status": "agent-backend-not-deployed",
+        "message": "LangGraph / DO ADK agent will be deployed separately."
+      }
+    },
+    {
+      "section": "10. 404 catch-all",
+      "name": "unknown route",
+      "method": "GET",
+      "path": "/api/this-does-not-exist",
+      "expected_status": 404,
+      "actual_status": 404,
+      "elapsed_ms": 38.67,
+      "error": null,
+      "body": {
+        "success": false,
+        "error": "Not found"
+      }
+    }
+  ]
+}
