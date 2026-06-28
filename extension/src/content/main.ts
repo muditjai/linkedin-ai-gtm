@@ -1058,8 +1058,13 @@ function logProgress(message: string): void {
 
 /**
  * Click the Nth conversation in the inbox sidebar, wait for the SPA to
- * navigate to its thread, then scrape the thread messages. Returns the
- * thread URN + messages on success, or an error.
+ * navigate to its thread, then scrape the FULL thread messages. Returns
+ * the thread URN + messages on success, or an error.
+ *
+ * Uses `waitForMessageList` + `scrollMessageListForFullThread` (same as
+ * `scrapeThreadsByClicking`) so older messages are also captured - a
+ * fixed sleep is not enough on slow SPAs and would yield only the
+ * messages currently in the viewport.
  */
 async function scrapeThreadByIndex(
   index: number,
@@ -1081,7 +1086,10 @@ async function scrapeThreadByIndex(
 
   const link = pickConversationLink(items[index]);
   if (!link) {
-    return { success: false, error: 'Could not find clickable link for that conversation.' };
+    return {
+      success: false,
+      error: 'Could not find clickable link for that conversation.',
+    };
   }
 
   logProgress(`Opening conversation ${index + 1} for thread scrape…`);
@@ -1093,8 +1101,21 @@ async function scrapeThreadByIndex(
       error: 'Click did not navigate to a thread URL. Try clicking manually first.',
     };
   }
-  // LinkedIn virtualises the message list - give it a beat to render.
-  await sleep(1500);
+
+  // Wait for the message list to actually render, then scroll it to
+  // load older history. The previous version used a fixed 1500 ms sleep
+  // here, which on slow SPAs left the message list empty (or with just
+  // the latest message) - hence the "only the last message" symptom.
+  const list = await waitForMessageList(THREAD_NAV_TIMEOUT_MS);
+  if (!list) {
+    return {
+      success: false,
+      error:
+        'Navigated to the thread but the message list never rendered. Try again after manually opening the thread once.',
+    };
+  }
+
+  await scrollMessageListForFullThread(list);
 
   const thread = scrapeThreadMessages();
   if (!thread.success) {

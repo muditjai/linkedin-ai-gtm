@@ -47,6 +47,8 @@ export async function handleConversations(
       return await scrapeConversations(message);
     case 'SCRAPE_THREAD':
       return await scrapeThread(message);
+    case 'SCRAPE_THREAD_BY_INDEX':
+      return await scrapeThreadByIndex(message);
     case 'SCRAPE_ALL':
       return await scrapeAll(message);
     case 'TEST_CONNECTION':
@@ -154,6 +156,148 @@ async function trySendScrapeThread(
     console.warn('[Conversations] SCRAPE_THREAD sendMessage failed:', err);
     return null;
   }
+}
+
+/**
+ * Open a specific conversation (by its index in the inbox list) and scrape
+ * the resulting thread. Used by the Messages tab when the user clicks a
+ * conversation in the left-hand pane.
+ *
+ * The content script's `scrapeThreadByIndex` handles the click, the URL
+ * navigation, and the message-list scrape - we just forward the request.
+ */
+async function scrapeThreadByIndex(
+  message: ExtensionMessage,
+): Promise<ExtensionResponse<{
+  threadId: string | null;
+  messages: ConversationMessage[];
+}>> {
+  const index = Number(message.index);
+  if (!Number.isFinite(index) || index < 0) {
+    return { success: false, error: `Invalid conversation index: ${message.index}` };
+  }
+  console.log('[Conversations] Scrape thread-by-index (index=', index, ')');
+
+  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/messaging*' });
+  if (tabs.length === 0) {
+    return {
+      success: false,
+      error:
+        'No LinkedIn messaging tab is open. Navigate to linkedin.com/messaging first.',
+    };
+  }
+
+  const linkedInTab = tabs[0];
+  if (!linkedInTab.id) {
+    return { success: false, error: 'LinkedIn tab is not accessible.' };
+  }
+
+  // Probe → inject → reprobe, same as the other scrapers.
+  let state = await probeContentScript(linkedInTab.id);
+  if (!state.loaded) {
+    const injected = await injectContentScript(linkedInTab.id);
+    if (!injected.ok) {
+      return {
+        success: false,
+        error: `Content script injection failed: ${injected.reason}.`,
+      };
+    }
+    await sleep(FIRST_RETRY_DELAY_MS);
+    state = await probeContentScript(linkedInTab.id);
+    if (!state.loaded) {
+      return {
+        success: false,
+        error:
+          'Injected content/main.js but the script did not register a listener.',
+      };
+    }
+  }
+
+  let response = await trySendScrapeThreadByIndex(linkedInTab.id, index);
+  if (!response) {
+    await sleep(SECOND_RETRY_DELAY_MS);
+    response = await trySendScrapeThreadByIndex(linkedInTab.id, index);
+  }
+
+  if (!response) {
+    return {
+      success: false,
+      error: 'Content script did not respond to SCRAPE_THREAD_BY_INDEX.',
+    };
+  }
+
+  const threadId = (response.threadId as string | null) ?? null;
+  const messages = (response.messages as ConversationMessage[]) ?? [];
+  const success = !!response.success;
+  const error = (response.error as string | undefined) ?? undefined;
+
+  if (success && messages.length > 0) {
+    // Cache the result so a later re-select is instant and so the
+    // SCRAPE_ALL response stays consistent.
+    if (threadId) {
+      try {
+        const result = await chrome.storage.local.get(['threads']);
+        const threads =
+          (result.threads as Record<string, ConversationMessage[]> | undefined) ?? {};
+        threads[threadId] = messages;
+        await chrome.storage.local.set({ threads });
+      } catch (err) {
+        console.warn('[Conversations] Could not cache thread:', err);
+      }
+    }
+    return {
+      success: true,
+      data: { threadId, messages },
+      count: messages.length,
+    };
+  }
+
+  if (error) {
+    return { success: false, error };
+  }
+  return {
+    success: false,
+    error: `Thread scrape for index ${index} produced no messages.`,
+  };
+}
+
+async function trySendScrapeThreadByIndex(
+  tabId: number,
+  index: number,
+): Promise<{
+  success?: boolean;
+  threadId?: string;
+  messages?: ConversationMessage[];
+  error?: string;
+} | null> {
+  for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'SCRAPE_THREAD_BY_INDEX',
+        index,
+      });
+      if (response) {
+        return response as {
+          success?: boolean;
+          threadId?: string;
+          messages?: ConversationMessage[];
+          error?: string;
+        };
+      }
+      console.warn(
+        `[Conversations] SCRAPE_THREAD_BY_INDEX returned empty (attempt ${attempt})`,
+      );
+    } catch (err) {
+      console.warn(
+        `[Conversations] SCRAPE_THREAD_BY_INDEX failed (attempt ${attempt}):`,
+        err,
+      );
+    }
+    if (attempt < MAX_SEND_ATTEMPTS) {
+      await sleep(150 * attempt);
+    }
+  }
+  return null;
 }
 
 /**

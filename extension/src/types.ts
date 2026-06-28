@@ -7,6 +7,7 @@ export type MessageType =
   | 'GET_CONVERSATIONS'
   | 'SCRAPE_CONVERSATIONS'
   | 'SCRAPE_THREAD'
+  | 'SCRAPE_THREAD_BY_INDEX'
   | 'SCRAPE_ALL'
   | 'TEST_CONNECTION'
   | 'GET_SEQUENCER'
@@ -36,6 +37,8 @@ export interface ExtensionMessage {
    * inbox-side click count.
    */
   conversationLimit?: number;
+  /** Index of a conversation in the inbox list (for `SCRAPE_THREAD_BY_INDEX`). */
+  index?: number;
   sequencer?: Sequencer;
   conversationId?: string;
 }
