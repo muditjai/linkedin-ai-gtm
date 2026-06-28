@@ -190,6 +190,18 @@ function renderMessageBubble(
     edited.textContent = '(edited)';
     meta.appendChild(edited);
   }
+  if (msg.isNew) {
+    // Set by the backend integration: this message is being seen for the
+    // first time since the previous scrape. Render a small badge so the
+    // user can quickly see what's new.
+    const pill = document.createElement('span');
+    pill.className =
+      'ml-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700';
+    pill.textContent = 'New';
+    pill.title =
+      'New since the last scrape (the service backend had not seen this message before)';
+    meta.appendChild(pill);
+  }
   if (msg.reactions.length > 0) {
     const reactions = document.createElement('span');
     reactions.textContent = ` ${msg.reactions.join(' ')}`;

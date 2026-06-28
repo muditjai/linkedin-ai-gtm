@@ -91,6 +91,10 @@ export interface ConversationMessage {
   needsReply: boolean;
   outcome?: 'positive' | 'negative';
   needsFollowUp: boolean;
+  /** Set by the side panel / backend integration when this message was
+   *  scraped for the first time (i.e. the backend hadn't seen it before).
+   *  The UI uses it to render a NEW pill. */
+  isNew?: boolean;
 }
 
 // Sequencer Types
