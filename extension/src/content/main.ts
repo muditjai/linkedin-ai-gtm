@@ -494,16 +494,18 @@ function scrapeThreadMessages(): ScrapeThreadResponse {
     if (messages.length >= MAX_MESSAGES_PER_THREAD) {
       return;
     }
-    // LinkedIn emits a "Friday" / "Saturday" heading as its own list item
-    // *before* the first message of that day. When we see one, capture it so
-    // the next message(s) inherit it.
+    // LinkedIn emits a "Friday" / "Saturday" heading INSIDE the same
+    // <li> as the first message of that day (not as its own <li>). We
+    // pick up the day text here so the next message inherits it, but
+    // we DO NOT return early - the actual message event is in this
+    // same <li> and we still need to extract it. Returning early was
+    // the bug that dropped every outbound (sent) message in a thread
+    // because they always appear first under a day heading.
     const dayHeadingEl = node.querySelector(
       '.msg-s-message-list__time-heading',
     );
     if (dayHeadingEl) {
       currentDay = dayHeadingEl.textContent?.trim() ?? null;
-      // Day headings are their own <li>; don't treat them as messages.
-      return;
     }
 
     const message = extractThreadMessage(node, threadId, currentDay);
@@ -967,7 +969,7 @@ async function scrapeThreadsByClicking(
     let currentDay: string | null = null;
     // Track the index of the LAST message we keep so we can correctly
     // flag `needsReply` on it. The DOM index of the last kept message
-    // depends on how many day-heading <li> nodes we skipped.
+    // depends on how many day-heading <li> nodes we process.
     let lastKeptIndex = -1;
     messageNodes.forEach((node, idx) => {
       // Per-thread message cap (safety guard against very long threads).
@@ -975,12 +977,18 @@ async function scrapeThreadsByClicking(
       if (messagesFromNodeList.length >= MAX_MESSAGES_PER_THREAD) {
         return;
       }
+      // LinkedIn emits the "Friday" / "Saturday" heading INSIDE the
+      // same <li> as the first message of that day. We pick up the
+      // day text here so the next message inherits it, but we DO NOT
+      // return early - the actual message event is in this same <li>
+      // and we still need to extract it. Returning early was the bug
+      // that dropped every outbound (sent) message in a thread because
+      // they always appear first under a day heading.
       const dayHeadingEl = node.querySelector(
         '.msg-s-message-list__time-heading',
       );
       if (dayHeadingEl) {
         currentDay = dayHeadingEl.textContent?.trim() ?? null;
-        return;
       }
       const message = extractThreadMessage(node, getThreadId(), currentDay);
       if (message) {
