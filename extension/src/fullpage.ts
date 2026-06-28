@@ -44,10 +44,29 @@ async function init(): Promise<void> {
     threadMessages: [],
     activeThreadId: null,
     threads: {},
+    pendingNewUrns: {},
     sequencer: null,
     dashboard: null,
     activeConversation: null,
   };
+
+  // Restore the per-thread "new since last scrape" markers that the
+  // buttons module persisted at the end of the last Scrape All. Without
+  // this, the NEW pill would never survive a full-page reload.
+  try {
+    const stored = await chrome.storage.local.get('pendingNewMessageUrns');
+    const pending =
+      (stored.pendingNewMessageUrns as Record<string, string[]> | undefined) ??
+      {};
+    window.popupState.pendingNewUrns = pending;
+    console.log(
+      '[FullPage] Restored',
+      Object.keys(pending).length,
+      'threads of pending-NEW markers.',
+    );
+  } catch (err) {
+    console.warn('[FullPage] Could not restore pendingNewUrns:', err);
+  }
 
   setupTabs();
   setupButtons();

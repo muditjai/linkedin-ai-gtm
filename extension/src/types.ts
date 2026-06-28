@@ -68,6 +68,8 @@ export interface Conversation {
   avatar: string | null;
   lastMessageAt: string;
   unread: boolean;
+  /** LinkedIn URN of the underlying thread, when sourced from the backend. */
+  urn?: string;
 }
 
 export interface ConversationMessage {
@@ -99,6 +101,10 @@ export interface ConversationMessage {
    *  scraped for the first time (i.e. the backend hadn't seen it before).
    *  The UI uses it to render a NEW pill. */
   isNew?: boolean;
+  /** ISO timestamp from the backend for when this message was first
+   *  persisted (the Mongoose `createdAt`). Lets the client mark a
+   *  message as new on subsequent fetches. */
+  firstSeenAt?: string;
 }
 
 // Sequencer Types
@@ -168,6 +174,12 @@ export interface PopupState {
    * Messages tab. Lets us re-render a thread without re-scraping it.
    */
   threads: Record<string, ConversationMessage[]>;
+  /**
+   * Per-thread "new since last scrape" marker URNs. Populated by the
+   * backend's upsert response and consumed when the user opens a thread
+   * so the NEW pill survives a re-fetch from MongoDB.
+   */
+  pendingNewUrns: Record<string, string[]>;
   sequencer: Sequencer | null;
   dashboard: Dashboard | null;
   activeConversation: Conversation | null;
@@ -227,6 +239,133 @@ export type ScrapeProgressStarter = (total: number) => void;
 /** Force-hide the scrape progress bar (the bar also auto-hides after a
  *  short delay when the `finished` phase event arrives). */
 export type ScrapeProgressEnder = () => void;
+
+/* ---------------------------------------------------------------------------
+ * Context sources (per-thread, returned by GET /api/threads/:urn/context)
+ *
+ * Mirrors the backend's `ContextSource` union in `backend/src/routes/threads.ts`.
+ * Per AGENTS.md Phase 3 the side panel surfaces these so the AI has richer
+ * grounding when drafting replies. Most kinds are stubs today - the
+ * `available` flag tells the UI which ones have real data.
+ * ------------------------------------------------------------------------- */
+
+export interface LinkedInProfileSource {
+  kind: 'linkedin_profile';
+  available: boolean;
+  name: string;
+  headline: string;
+  location: string;
+  profileUrl: string;
+  about: string[];
+  experience: Array<{ title: string; company: string; duration: string }>;
+}
+
+export interface CompanySource {
+  kind: 'company';
+  available: boolean;
+  name: string;
+  industry: string;
+  size: string;
+  website: string;
+  description: string;
+}
+
+export interface EmailSource {
+  kind: 'email';
+  available: boolean;
+  history: Array<{
+    subject: string;
+    from: string;
+    sentAt: string;
+    snippet: string;
+  }>;
+}
+
+export interface CommonConnectionSource {
+  kind: 'common_connections';
+  available: boolean;
+  people: Array<{
+    name: string;
+    headline: string;
+    profileUrl: string;
+  }>;
+}
+
+export interface SocialPostSource {
+  kind: 'social_posts';
+  available: boolean;
+  posts: Array<{
+    platform: 'linkedin' | 'twitter' | 'facebook' | 'other';
+    author: string;
+    postedAt: string;
+    snippet: string;
+    url: string;
+  }>;
+}
+
+export interface InterestSource {
+  kind: 'interests';
+  available: boolean;
+  tags: string[];
+  prioritised: boolean;
+}
+
+export interface FeedbackSource {
+  kind: 'feedback';
+  available: boolean;
+  recent: Array<{
+    score: number;
+    comment: string;
+    createdAt: string;
+  }>;
+}
+
+export type ContextSource =
+  | LinkedInProfileSource
+  | CompanySource
+  | EmailSource
+  | CommonConnectionSource
+  | SocialPostSource
+  | InterestSource
+  | FeedbackSource;
+
+export interface ContextSourcesResponse {
+  success: boolean;
+  urn: string;
+  conversationName: string;
+  sources: ContextSource[];
+  /** Unix-ms timestamp the payload was assembled. */
+  assembledAt: number;
+}
+
+/* ---------------------------------------------------------------------------
+ * Cross-component events
+ *
+ * The Messages tab (centre pane) and the AI side panel (right pane) need
+ * to stay in sync without importing each other. We dispatch a custom DOM
+ * event on `window` whenever the user picks a conversation; the side
+ * panel listens and updates `selectedUrn`.
+ * ------------------------------------------------------------------------- */
+
+export interface ThreadSelectedDetail {
+  urn: string;
+  /** Convenience - the rendered conversation row, if the emitter had one. */
+  conversation?: Conversation;
+}
+
+export const THREAD_SELECTED_EVENT = 'linkedin-ai:thread-selected';
+
+/** Type-safe accessor for the custom event detail. */
+export function readThreadSelectedDetail(
+  event: Event,
+): ThreadSelectedDetail | null {
+  const ce = event as CustomEvent<ThreadSelectedDetail>;
+  const detail = ce.detail;
+  if (!detail || typeof detail !== 'object' || typeof detail.urn !== 'string') {
+    return null;
+  }
+  return detail;
+}
 
 // Declare global
 declare global {

@@ -15,12 +15,14 @@ import type {
 } from '../types.js';
 import { loadDashboard } from './dashboard.js';
 import { renderSequencer } from './sequencer.js';
-import { renderContacts } from './messages.js';
+import { renderContacts, loadConversations } from './messages.js';
+import { refreshThreadList } from './sidePanel.js';
 import { upsertMessages as apiUpsertMessages } from './api.js';
 
 const DEFAULT_CONVERSATION_LIMIT = 5;
 const CONVERSATION_LIMIT_MIN = 0;
 const CONVERSATION_LIMIT_MAX = 20;
+const STORAGE_KEY_PENDING_NEW = 'pendingNewMessageUrns';
 
 interface ScrapeAllData {
   conversations: Conversation[];
@@ -155,22 +157,35 @@ async function scrapeAll(): Promise<void> {
         threadsScraped,
       );
 
-      // Inbox list.
-      if (conversations.length > 0) {
-        window.popupState.conversations = conversations;
-        renderContacts();
-        updateConversationCount();
-        const convCountEl = document.getElementById('conversationCount');
-        if (convCountEl) {
-          convCountEl.textContent = String(conversations.length);
-        }
+      // Persist the scraped threads to the backend and capture the
+      // `newSinceLastScrape` URNs so the Messages tab can mark them
+      // with the NEW pill on the next view. We always do this even
+      // when no threads came back (the upsert loop is a no-op in
+      // that case) so the inbox / side panel refresh stays consistent.
+      const newSinceLastScrape = await persistAndMarkNew(
+        Object.entries(threads),
+        conversations,
+      );
+
+      // Inbox list - re-fetched from the backend so the contact list
+      // reflects the merged dataset (older threads too).
+      await loadConversations();
+      updateConversationCount();
+      const convCountEl = document.getElementById('conversationCount');
+      if (convCountEl) {
+        convCountEl.textContent = String(
+          window.popupState.conversations.length,
+        );
       }
 
-      // Threads collected by the click-through.
+      // Side panel thread list - re-fetch from the backend so the
+      // "top 15" list reflects any new activity.
+      await refreshThreadList();
+
+      // Threads collected by the click-through (local cache only - the
+      // backend is now the source of truth so we don't paint over it).
       if (Object.keys(threads).length > 0) {
         renderThreadsIntoState(threads);
-        // Render whichever thread is currently active (i.e. matches the
-        // open thread page). Fall back to the first one we scraped.
         const activeUrn = data?.threadId ?? Object.keys(threads)[0];
         const activeMessages = activeUrn ? threads[activeUrn] : undefined;
         if (activeMessages) {
@@ -188,21 +203,12 @@ async function scrapeAll(): Promise<void> {
       recordScrape();
       await loadDashboard();
 
-      // Post-scrape: send the just-scraped thread messages to the
-      // service backend so we can compute the diff ("new since last
-      // scrape") and mark new messages for the side panel.
-      try {
-        await persistAndMarkNew(Object.entries(threads), conversations);
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('[Buttons] failed to persist scrape to backend:', e);
-      }
-
       logStatus(
         `Scrape All complete: ${conversations.length} inbox conversation` +
           `${conversations.length === 1 ? '' : 's'} + ` +
           `${threadsScraped} thread${threadsScraped === 1 ? '' : 's'} ` +
-          `(${totalThreadMessages} message${totalThreadMessages === 1 ? '' : 's'}).`,
+          `(${totalThreadMessages} message${totalThreadMessages === 1 ? '' : 's'}, ` +
+          `${newSinceLastScrape} new since previous scrape).`,
         'success',
       );
     } else {
@@ -351,6 +357,9 @@ async function testConnection(): Promise<void> {
 /**
  * Push the per-conversation thread messages collected by SCRAPE_ALL into
  * `popupState` and pick one to display in the right-hand pane.
+ *
+ * This is purely a local cache for the Dashboard view - the Messages
+ * tab reads its data from the backend, not from this cache.
  */
 function renderThreadsIntoState(
   threads: Record<string, ConversationMessage[]>,
@@ -534,6 +543,7 @@ function clearAllMessageState(): void {
   window.popupState.threadMessages = [];
   window.popupState.activeThreadId = null;
   window.popupState.activeConversation = null;
+  window.popupState.pendingNewUrns = {};
 
   // Re-render the contact list with the empty state.
   renderContacts();
@@ -586,6 +596,7 @@ function clearAllMessageState(): void {
       'threadId',
       'threadLastScrapedAt',
       'lastScrapeAllAt',
+      STORAGE_KEY_PENDING_NEW,
     ]);
   } catch (err) {
     console.warn('[Buttons] Could not clear stored scrape:', err);
@@ -602,47 +613,54 @@ function recordScrape(): void {
  * Backend integration - persist the freshly-scraped threads and mark
  * any messages the backend hadn't seen as `isNew: true` so the UI can
  * badge them.
+ *
+ * The backend's `(threadUrn, messageUrn)` unique index gives us
+ * idempotent upserts: re-scraping the same conversation only updates
+ * timestamps, never duplicates. The response carries
+ * `newSinceLastScrape` for the messages it hadn't seen before, which
+ * is exactly what we want to surface as the NEW pill.
  * -------------------------------------------------------------------------- */
 
 type ThreadEntry = [string, ConversationMessage[]];
 
 /**
  * POST each thread to the service backend, then mutate the in-memory
- * thread cache to add `isNew: true` to any messageURN the backend's
- * `newSinceLastScrape` reported.
+ * state so:
+ *   1. `popupState.pendingNewUrns[urn]` holds the URNs the backend
+ *      reported as "new since last scrape". The Messages tab reads
+ *      this list once (when the user opens the thread) to badge the
+ *      matching messages, then consumes the entry. This is the
+ *      mechanism that makes the NEW pill survive a backend re-fetch.
+ *   2. `popupState.threads[urn]` (the local cache) gets the same
+ *      `isNew` flag set, so any UI rendering from the local cache
+ *      also sees the pill.
  *
- * We deliberately re-iterate the live `state.threads[urn]` (not the
- * snapshot we POSTed) so the badge flag survives any UI-side mutations
- * between the POST and the next render.
+ * Returns the total number of NEW-message URNs across all threads.
  */
 async function persistAndMarkNew(
   threadEntries: ThreadEntry[],
   conversations: Conversation[],
-): Promise<void> {
-  // Index conversations by threadUrn for O(1) lookup of the partner
-  // record (name, URL, avatar).
-  const convByUrn = new Map<string, Conversation>();
+): Promise<number> {
+  // Index conversations by URN when we can. The content script
+  // generates `conv_<index>_<ts>` ids which are NOT the URN, but we
+  // can still match by name as a soft hint.
+  const convByName = new Map<string, Conversation>();
   for (const c of conversations) {
-    // `Conversation.id` is the synthetic id we assigned in the
-    // content script (`conv_<index>_<ts>`); it isn't the thread URN.
-    // We use the conversation NAME as a soft key, and fall back to
-    // matching by URN in the messages themselves.
-    convByUrn.set(c.id, c);
+    if (c.name) convByName.set(c.name, c);
   }
 
   let totalNew = 0;
   for (const [urn, messages] of threadEntries) {
     if (!urn || messages.length === 0) continue;
-    // Find a matching conversation by name (best effort).
-    let conversationName = '';
-    for (const c of conversations) {
-      if (c.id === urn) {
-        conversationName = c.name;
-        break;
-      }
-    }
-    if (!conversationName && messages[0]) {
-      // Fallback: use the first message's "other" person as the label.
+
+    // Find a matching conversation by name. If we don't have one we
+    // fall back to the first inbound message's sender so the backend
+    // gets a sensible label rather than a generic "Conversation".
+    let conversationName =
+      convByName.get(
+        messages.find((m) => m.direction === 'inbound')?.senderName ?? '',
+      )?.name ?? '';
+    if (!conversationName) {
       const firstNonSelf = messages.find(
         (m) => m.direction === 'inbound',
       );
@@ -656,18 +674,44 @@ async function persistAndMarkNew(
       conversationUrl,
       messages,
     );
-    if (!res) continue;
+    if (!res) {
+      console.warn(
+        '[Buttons] Backend upsert failed for thread',
+        urn.slice(0, 24) + '…',
+      );
+      continue;
+    }
 
     const newSet = new Set(res.summary?.newSinceLastScrape ?? []);
     totalNew += newSet.size;
 
-    // Mutate the live cache to flag the new messages.
+    // Push the NEW URNs into the per-thread pending list so the
+    // Messages tab can read them on next view.
+    if (newSet.size > 0) {
+      const pending = window.popupState.pendingNewUrns ?? {};
+      pending[urn] = [...newSet];
+      window.popupState.pendingNewUrns = pending;
+    }
+
+    // Also stamp isNew onto the live local cache so any UI reading
+    // from `state.threads[urn]` shows the pill immediately.
     const live = window.popupState.threads[urn];
     if (live) {
       for (const m of live) {
         m.isNew = newSet.has(m.id);
       }
     }
+  }
+
+  // Persist the pending list so a full page reload doesn't lose it.
+  try {
+    if (totalNew > 0) {
+      await chrome.storage.local.set({
+        [STORAGE_KEY_PENDING_NEW]: window.popupState.pendingNewUrns,
+      });
+    }
+  } catch (err) {
+    console.warn('[Buttons] Could not persist pendingNewUrns:', err);
   }
 
   // eslint-disable-next-line no-console
@@ -678,4 +722,5 @@ async function persistAndMarkNew(
     threadEntries.length,
     'thread(s).',
   );
+  return totalNew;
 }

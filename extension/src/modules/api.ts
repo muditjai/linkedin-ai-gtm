@@ -16,7 +16,11 @@
  * is offline).
  */
 
-import type { ConversationMessage } from '../types.js';
+import type {
+  Conversation,
+  ConversationMessage,
+  ContextSourcesResponse,
+} from '../types.js';
 
 const STORAGE_KEY = 'BACKEND_URL';
 // Default -> DO k8s LoadBalancer in sfo2 (env=production, db=linkedin-ai
@@ -122,11 +126,17 @@ export interface ThreadsListResponse {
   threads: BackendThread[];
 }
 
+/**
+ * Raw Mongoose doc shape returned by GET /api/messages. We expose this
+ * (rather than `ConversationMessage[]`) so the normaliser can pick up
+ * the `createdAt` / `updatedAt` fields that don't exist on the
+ * extension-side type.
+ */
 export interface MessagesListResponse {
   success: boolean;
   threadUrn: string;
   count: number;
-  messages: ConversationMessage[];
+  messages: Array<Record<string, unknown>>;
 }
 
 export interface DraftResponse {
@@ -168,7 +178,22 @@ export async function getTopThreads(limit = 15): Promise<BackendThread[]> {
   return res?.threads ?? [];
 }
 
-/** GET /api/messages?threadUrn=... - persisted messages for one thread. */
+/**
+ * GET /api/threads?limit=N - canonical alias used by the Messages tab.
+ * Same response shape as `getTopThreads` but semantically named for the
+ * inbox-list use case.
+ */
+export async function getThreads(limit = 50): Promise<BackendThread[]> {
+  return getTopThreads(limit);
+}
+
+/**
+ * GET /api/messages?threadUrn=... - persisted messages for one thread.
+ *
+ * The backend's lean docs include the Mongoose `createdAt`/`updatedAt`
+ * timestamps. We surface them as `firstSeenAt` so the caller can decide
+ * whether to render the NEW pill on subsequent fetches.
+ */
 export async function getMessages(
   threadUrn: string,
 ): Promise<ConversationMessage[]> {
@@ -176,7 +201,61 @@ export async function getMessages(
     'GET',
     `/api/messages?threadUrn=${encodeURIComponent(threadUrn)}`,
   );
-  return res?.messages ?? [];
+  const raw = res?.messages ?? [];
+  return raw.map((m) => normaliseBackendMessage(m));
+}
+
+/**
+ * Convert a raw Mongoose `messages` doc into the `ConversationMessage`
+ * shape the UI expects. The backend uses `messageUrn` as its natural
+ * key but the extension types use `id`, so we copy across and attach
+ * `firstSeenAt` for the new-pill logic.
+ */
+function normaliseBackendMessage(raw: Record<string, unknown>): ConversationMessage {
+  const messageUrn = typeof raw.messageUrn === 'string' ? raw.messageUrn : '';
+  const createdAt = raw.createdAt;
+  let firstSeenAt: string | undefined;
+  if (createdAt instanceof Date) {
+    firstSeenAt = createdAt.toISOString();
+  } else if (typeof createdAt === 'string' && createdAt.length > 0) {
+    firstSeenAt = createdAt;
+  }
+  return {
+    id: messageUrn,
+    conversationId:
+      typeof raw.threadUrn === 'string' ? raw.threadUrn : '',
+    senderName: typeof raw.senderName === 'string' ? raw.senderName : '',
+    senderAvatar: null,
+    content: typeof raw.content === 'string' ? raw.content : '',
+    direction:
+      raw.direction === 'inbound' || raw.direction === 'outbound'
+        ? raw.direction
+        : 'inbound',
+    timestamp: typeof raw.timestamp === 'string' ? raw.timestamp : '',
+    dateHeading:
+      typeof raw.dateHeading === 'string' ? raw.dateHeading : null,
+    edited: raw.edited === true,
+    reactions: Array.isArray(raw.reactions)
+      ? raw.reactions.filter((r): r is string => typeof r === 'string')
+      : [],
+    needsReply: false,
+    needsFollowUp: false,
+    firstSeenAt,
+  };
+}
+
+/**
+ * GET /api/threads/:urn/context - per-thread context sources for the
+ * side panel. Returns `null` on network / 5xx failure so the caller can
+ * render an empty-state gracefully.
+ */
+export async function getContextSources(
+  threadUrn: string,
+): Promise<ContextSourcesResponse | null> {
+  return request<ContextSourcesResponse>(
+    'GET',
+    `/api/threads/${encodeURIComponent(threadUrn)}/context`,
+  );
 }
 
 /** POST /api/draft - generate a draft reply via Gemini / DO Inference. */
@@ -218,4 +297,23 @@ export async function getAgentStatus(): Promise<{ deployed: boolean }> {
 export async function pingBackend(): Promise<boolean> {
   const res = await request<{ success: boolean }>('GET', '/health');
   return res?.success === true;
+}
+
+/**
+ * Project a backend `BackendThread` row into the legacy `Conversation`
+ * shape used by the messages sidebar. We use the URN as the conversation
+ * `id` (the previous shape used a synthetic id) so a click handler can
+ * look up the thread by URN without an index-based mapping.
+ */
+export function threadToConversation(thread: BackendThread): Conversation {
+  return {
+    id: thread.urn,
+    urn: thread.urn,
+    name: thread.conversationName,
+    preview: thread.lastInboundPreview || thread.lastMessageTime || '',
+    time: thread.lastMessageTime || '',
+    avatar: null,
+    lastMessageAt: thread.lastScrapedAt ?? thread.createdAt ?? '',
+    unread: thread.lastMessageIsInbound === true,
+  };
 }
