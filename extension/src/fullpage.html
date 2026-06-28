@@ -87,6 +87,7 @@
       </div>
       <div class="flex gap-4" style="height: calc(100vh - 380px);">
         <div class="flex w-80 flex-col overflow-hidden rounded-xl bg-white shadow-card">
+          <!-- Left: contact list (existing) -->
           <div class="border-b border-gray-200 bg-gray-50 px-4 py-4 font-semibold flex items-center justify-between">
             <span>Conversations (<span id="convCount">0</span>)</span>
             <span id="loadingThread" class="hidden text-xs font-normal text-brand-600">
@@ -106,6 +107,8 @@
             <div class="empty-state">Click on a conversation on the left to load messages</div>
           </div>
         </div>
+        <!-- Right: AI reply side panel (mounted by fullpage.ts) -->
+        <div id="sidePanel" class="hidden w-96 flex-col overflow-hidden rounded-xl bg-white shadow-card"></div>
       </div>
     </section>
 

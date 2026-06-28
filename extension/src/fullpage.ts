@@ -12,6 +12,7 @@ import { setupButtons } from './modules/buttons.js';
 import { loadDashboard } from './modules/dashboard.js';
 import { loadSequencer } from './modules/sequencer.js';
 import { loadConversations, renderContacts } from './modules/messages.js';
+import { mountSidePanel, refreshThreadList } from './modules/sidePanel.js';
 import type { LogKind } from './types.js';
 
 const SCRAPE_LIMIT_MIN = 1;
@@ -57,7 +58,16 @@ async function init(): Promise<void> {
   updateConversationCount();
   renderContacts();
 
+  // Mount the AI side panel. The panel itself calls the backend; if the
+  // backend is unreachable it just shows an empty-state message.
+  await mountSidePanel();
+
   console.log('[FullPage] Initialized');
+}
+
+/** Re-fetch the side panel from the backend. Called after Scrape All. */
+export async function refreshSidePanel(): Promise<void> {
+  await refreshThreadList();
 }
 
 /**
