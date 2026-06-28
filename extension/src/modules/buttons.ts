@@ -29,6 +29,9 @@ export function setupButtons(): void {
   onClick('btnScrape', () => {
     void scrapeConversations();
   });
+  onClick('btnTestConnection', () => {
+    void testConnection();
+  });
   onClick('btnSaveSequencer', () => {
     void saveSequencer();
   });
@@ -183,6 +186,43 @@ async function executeSequence(): Promise<void> {
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
+  }
+}
+
+/**
+ * Diagnostic that probes the LinkedIn tab for the content-script
+ * loaded flag and reports the result back into the activity log.
+ */
+async function testConnection(): Promise<void> {
+  logStatus('Testing content-script connection...', 'info');
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: 'TEST_CONNECTION',
+    } as ExtensionMessage)) as ExtensionResponse<{
+      loaded: boolean;
+      loadedAt: number | null;
+      url: string;
+      hasChromeRuntime: boolean;
+    }>;
+
+    const data = response.data;
+    const urlEl = document.getElementById('linkedinTabUrl');
+    if (urlEl) urlEl.textContent = data?.url ?? '—';
+
+    if (response.success && data?.loaded) {
+      logStatus(
+        `Content script loaded on ${data.url ?? 'unknown URL'}. Listener is ready.`,
+        'success',
+      );
+    } else {
+      logStatus(
+        `Content script NOT loaded: ${response.error ?? 'unknown reason'}.`,
+        'error',
+      );
+    }
+  } catch (error) {
+    console.error('[Buttons] testConnection error:', error);
+    logStatus(`Test failed: ${(error as Error).message}`, 'error');
   }
 }
 

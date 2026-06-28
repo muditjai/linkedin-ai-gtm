@@ -2,10 +2,13 @@
  * Conversations Handler
  *
  * Forwards scrape requests to the LinkedIn tab's content script. If the
- * content script isn't responding (typical when the tab was open before
- * the extension was installed/updated) we attempt to programmatically
- * inject it via `chrome.scripting.executeScript` and retry, with the
- * injected file path mirrored from the manifest registration.
+ * content script isn't responding we:
+ *   1. Probe the tab for the `__linkedinAiGtmContentLoaded` flag.
+ *   2. Inject `content/main.js` via `chrome.scripting.executeScript`.
+ *   3. Probe again to confirm the listener actually registered.
+ *   4. Send the scrape message.
+ *
+ * Each step is logged so the user can see exactly which one failed.
  */
 
 import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
@@ -19,6 +22,13 @@ interface ScrapePayload {
   error?: string;
 }
 
+interface ContentScriptState {
+  loaded: boolean;
+  loadedAt: number | null;
+  url: string;
+  hasChromeRuntime: boolean;
+}
+
 export async function handleConversations(
   message: ExtensionMessage,
   _sender: chrome.runtime.MessageSender,
@@ -30,6 +40,8 @@ export async function handleConversations(
       return await getConversations();
     case 'SCRAPE_CONVERSATIONS':
       return await scrapeConversations(message);
+    case 'TEST_CONNECTION':
+      return await testConnection();
     default:
       return { success: false, error: 'Unknown message type' };
   }
@@ -38,6 +50,50 @@ export async function handleConversations(
 async function getConversations(): Promise<ExtensionResponse<Conversation[]>> {
   const result = await chrome.storage.local.get(['conversations']);
   return { success: true, data: (result.conversations as Conversation[]) || [] };
+}
+
+/**
+ * Diagnostic used by the "Test Connection" button in the UI.
+ */
+async function testConnection(): Promise<ExtensionResponse<ContentScriptState>> {
+  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/messaging*' });
+  if (tabs.length === 0) {
+    return {
+      success: false,
+      error: 'No LinkedIn messaging tab is open.',
+      data: { loaded: false, loadedAt: null, url: '', hasChromeRuntime: false },
+    };
+  }
+  const tabId = tabs[0].id;
+  if (!tabId) {
+    return {
+      success: false,
+      error: 'LinkedIn tab has no id.',
+      data: { loaded: false, loadedAt: null, url: '', hasChromeRuntime: false },
+    };
+  }
+
+  let state = await probeContentScript(tabId);
+  if (!state.loaded) {
+    const injectResult = await injectContentScript(tabId);
+    if (!injectResult.ok) {
+      return {
+        success: false,
+        error: `Content script injection failed: ${injectResult.reason}`,
+        data: state,
+      };
+    }
+    await sleep(FIRST_RETRY_DELAY_MS);
+    state = await probeContentScript(tabId);
+  }
+
+  return {
+    success: state.loaded,
+    data: state,
+    error: state.loaded
+      ? undefined
+      : 'Content script is still not loaded after injection. Check the LinkedIn tab DevTools console for errors.',
+  };
 }
 
 async function scrapeConversations(
@@ -62,13 +118,13 @@ async function scrapeConversations(
     return { success: false, error: 'LinkedIn tab is not accessible.' };
   }
 
-  // Try the registered content script first. If it doesn't answer, fall
-  // back to a manual injection (which loads `content/main.js` into the
-  // same isolated world the manifest registers it in) and try again.
-  let response = await trySendScrape(linkedInTab.id, limit);
+  // 1) Probe first — if the manifest content script already loaded, we
+  //    can skip the manual injection step.
+  let state = await probeContentScript(linkedInTab.id);
+  console.log('[Conversations] Probe state:', state);
 
-  if (!response) {
-    console.log('[Conversations] No response, attempting manual content script injection');
+  // 2) If not loaded, try to inject.
+  if (!state.loaded) {
     const injected = await injectContentScript(linkedInTab.id);
     if (!injected.ok) {
       return {
@@ -77,11 +133,21 @@ async function scrapeConversations(
       };
     }
     await sleep(FIRST_RETRY_DELAY_MS);
-    response = await trySendScrape(linkedInTab.id, limit);
+    state = await probeContentScript(linkedInTab.id);
+    console.log('[Conversations] Post-injection state:', state);
+    if (!state.loaded) {
+      return {
+        success: false,
+        error:
+          'Injected content/main.js but the script did not register a listener. Open the LinkedIn tab DevTools console to see the error.',
+      };
+    }
   }
 
-  // One more retry with a longer delay in case the script is still
-  // initialising.
+  // 3) Listener is in place — try to send the scrape message.
+  let response = await trySendScrape(linkedInTab.id, limit);
+
+  // 4) One last-ditch retry with a longer delay in case the SPA is slow.
   if (!response) {
     console.log('[Conversations] Still no response, retrying with longer delay');
     await sleep(SECOND_RETRY_DELAY_MS);
@@ -105,8 +171,42 @@ async function scrapeConversations(
   return {
     success: false,
     error:
-      'Content script did not respond. Reload the LinkedIn tab and try again.',
+      'Content script did not respond to the scrape message. Check the LinkedIn tab DevTools console.',
   };
+}
+
+/**
+ * Probe the LinkedIn tab for the content-script loaded flag. Uses a
+ * function injection so we get the result back regardless of message
+ * channel state.
+ */
+async function probeContentScript(tabId: number): Promise<ContentScriptState> {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const w = window as unknown as {
+          __linkedinAiGtmContentLoaded?: boolean;
+          __linkedinAiGtmContentLoadedAt?: number;
+        };
+        return {
+          loaded: w.__linkedinAiGtmContentLoaded === true,
+          loadedAt: w.__linkedinAiGtmContentLoadedAt ?? null,
+          url: window.location.href,
+          hasChromeRuntime: typeof chrome !== 'undefined' && !!chrome.runtime?.onMessage,
+        };
+      },
+      world: 'ISOLATED',
+    });
+    if (Array.isArray(results) && results.length > 0) {
+      const r = results[0]?.result as ContentScriptState | undefined;
+      if (r) return r;
+    }
+    return { loaded: false, loadedAt: null, url: '', hasChromeRuntime: false };
+  } catch (err) {
+    console.warn('[Conversations] probeContentScript threw:', err);
+    return { loaded: false, loadedAt: null, url: '', hasChromeRuntime: false };
+  }
 }
 
 /**
@@ -136,9 +236,7 @@ async function trySendScrape(
 }
 
 /**
- * Manually inject the registered content script. Returns a tagged result
- * so the caller can surface a precise error message instead of the
- * generic "did not respond" fallback.
+ * Manually inject the registered content script.
  */
 async function injectContentScript(
   tabId: number,
@@ -149,6 +247,7 @@ async function injectContentScript(
       files: ['content/main.js'],
       world: 'ISOLATED',
     });
+    console.log('[Conversations] executeScript results:', results);
     if (!Array.isArray(results) || results.length === 0) {
       return { ok: false, reason: 'executeScript returned no results' };
     }

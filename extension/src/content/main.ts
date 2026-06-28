@@ -2,16 +2,13 @@
  * LinkedIn AI GTM - Content Script
  *
  * Runs inside LinkedIn messaging pages and is responsible for scraping the
- * conversation list out of LinkedIn's DOM. The script keeps its own
- * conversation type in sync with `src/types.ts` by re-exporting the shared
- * `Conversation` type and reusing it for the scrape response payload.
- *
- * Once loaded, we set `window.__linkedinAiGtmContentLoaded = true` so the
- * background script (and the user) can verify the injection succeeded.
+ * conversation list out of LinkedIn's DOM. Wraps everything in a top-level
+ * try/catch with explicit logging so we can see exactly where injection
+ * fails, and sets `window.__linkedinAiGtmContentLoaded` once the listener
+ * is registered so the background script can confirm the load.
  */
 
-import type { Conversation } from '../types.js';
-import type { ExtensionMessage, ExtensionResponse } from '../types.js';
+import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
 
 interface ScrapeConversationsResponse extends ExtensionResponse {
   conversations?: Conversation[];
@@ -20,14 +17,75 @@ interface ScrapeConversationsResponse extends ExtensionResponse {
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const LOADED_FLAG = '__linkedinAiGtmContentLoaded';
+const LOADED_AT = '__linkedinAiGtmContentLoadedAt';
 
 declare global {
   interface Window {
     [LOADED_FLAG]?: boolean;
+    [LOADED_AT]?: number;
   }
 }
 
-window[LOADED_FLAG] = true;
+/* ---------------------------------------------------------------------------
+ * Top-level error guards
+ *
+ * Anything that throws during script initialisation lands here. We use both
+ * a try/catch around the body and a `window.onerror` handler so we never
+ * silently die on LinkedIn's SPA.
+ * ------------------------------------------------------------------------- */
+window.onerror = (msg, _src, _line, _col, err) => {
+  console.error('[Content] window.onerror:', msg, err);
+};
+
+try {
+  boot();
+} catch (err) {
+  console.error('[Content] FATAL during boot:', err);
+}
+
+function boot(): void {
+  console.log('[Content] Booting on', window.location.href);
+
+  if (!isLinkedInMessagesPage()) {
+    console.warn('[Content] Not a LinkedIn messaging page, will still register listener');
+  }
+
+  window[LOADED_FLAG] = true;
+  window[LOADED_AT] = Date.now();
+  console.log('[Content] Listener registration starting');
+
+  chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+    console.log('[Content] Received:', message.type);
+
+    let responded = false;
+    const safeSend = (payload: ScrapeConversationsResponse): void => {
+      if (responded) return;
+      responded = true;
+      sendResponse(payload);
+    };
+
+    if (message.type === 'SCRAPE_CONVERSATIONS') {
+      const limit = clampLimit(message.limit);
+      Promise.resolve(scrapeConversations(limit))
+        .then(safeSend)
+        .catch((err: unknown) => {
+          console.error('[Content] Scrape threw:', err);
+          safeSend({ success: false, error: (err as Error).message });
+        });
+      return true;
+    }
+
+    safeSend({ success: false, error: 'Unknown message type' });
+    return false;
+  });
+
+  console.log('[Content] Listener registered OK');
+}
+
+function clampLimit(raw: number | undefined): number {
+  if (!raw || Number.isNaN(raw)) return DEFAULT_LIMIT;
+  return Math.min(MAX_LIMIT, Math.max(1, raw));
+}
 
 /**
  * Returns true when the current page is somewhere under the LinkedIn
@@ -38,46 +96,7 @@ function isLinkedInMessagesPage(): boolean {
 }
 
 /**
- * Listener for messages from the background service worker. The only
- * supported action right now is scraping the conversation list.
- */
-chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
-  console.log('[Content] Received:', message.type);
-
-  let responded = false;
-  const safeSend = (payload: ScrapeConversationsResponse): void => {
-    if (responded) return;
-    responded = true;
-    sendResponse(payload);
-  };
-
-  if (message.type === 'SCRAPE_CONVERSATIONS') {
-    const limit = clampLimit(message.limit);
-    Promise.resolve(scrapeConversations(limit))
-      .then(safeSend)
-      .catch((err: unknown) => {
-        console.error('[Content] Scrape threw:', err);
-        safeSend({ success: false, error: (err as Error).message });
-      });
-    return true; // Async response — keep the channel open.
-  }
-
-  safeSend({ success: false, error: 'Unknown message type' });
-  return false;
-});
-
-function clampLimit(raw: number | undefined): number {
-  if (!raw || Number.isNaN(raw)) return DEFAULT_LIMIT;
-  return Math.min(MAX_LIMIT, Math.max(1, raw));
-}
-
-/**
  * Pulls up to `limit` conversations out of the LinkedIn DOM.
- *
- * LinkedIn's class names change frequently; we try a small set of selectors
- * and gracefully fall back to a generic structure when the canonical one is
- * not present. Works on both the inbox landing page and the per-thread page
- * (the conversation list sidebar is rendered in both).
  */
 function scrapeConversations(limit: number): ScrapeConversationsResponse {
   if (!isLinkedInMessagesPage()) {
@@ -88,8 +107,6 @@ function scrapeConversations(limit: number): ScrapeConversationsResponse {
   }
 
   try {
-    console.log('[Content] Scraping conversations, limit:', limit);
-
     const items = pickConversationItems();
     if (items.length === 0) {
       return {
@@ -122,7 +139,6 @@ function pickConversationItems(): NodeListOf<Element> {
     '.msg-conversations-container__convo-item',
     'li[class*="conversation-listitem"]',
     'li[data-conversation-id]',
-    // Newer LinkedIn DOM (2024+): anchor items in the messaging sidebar.
     'div.msg-conversation-listitem',
     'a.msg-conversation-listitem',
     '.msg-overlay-list-bubble__convo-item',
@@ -136,7 +152,6 @@ function pickConversationItems(): NodeListOf<Element> {
     }
   }
 
-  // Last-ditch: any list item in the messaging sidebar.
   const sidebar = document.querySelector('.msg-conversations-container, [class*="msg-conversations"]');
   if (sidebar) {
     const items = sidebar.querySelectorAll('li, [role="listitem"]');
