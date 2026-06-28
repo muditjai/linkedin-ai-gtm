@@ -90,8 +90,15 @@ async function scrapeAll(): Promise<void> {
   );
 
   try {
+    // The "Max threads" input in the dashboard controls BOTH:
+    //   1. how many inbox rows we keep (cap = threadLimit)
+    //   2. how many conversation threads we click through (cap = threadLimit)
+    // Sending `threadLimit` as both `limit` and `threadLimit` keeps the
+    // expectation "type 5 -> get 5 of everything" true regardless of which
+    // inbox field used to be `scrapeCount`.
     const response = (await chrome.runtime.sendMessage({
       type: 'SCRAPE_ALL',
+      limit: threadLimit,
       threadLimit,
     } as ExtensionMessage)) as ExtensionResponse<ScrapeAllData> & {
       threads?: Record<string, ConversationMessage[]>;

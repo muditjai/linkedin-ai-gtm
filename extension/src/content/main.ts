@@ -81,6 +81,10 @@ interface ScrapeAllResponse extends ExtensionResponse {
   threadId?: string;
   messages?: ConversationMessage[];
   scrollIterations?: number;
+  /** Per-thread messages keyed by the LinkedIn URN. */
+  threads?: Record<string, ConversationMessage[]>;
+  /** How many conversation threads the scraper actually opened + scraped. */
+  threadsScraped?: number;
 }
 
 const DEFAULT_LIMIT = 20;
@@ -144,9 +148,15 @@ function boot(): void {
     }
 
     if (message.type === 'SCRAPE_ALL') {
-      const limit = clampLimit(message.limit);
-      const threadLimit = readThreadLimit(message.threadLimit);
-      Promise.resolve(scrapeAll(limit, threadLimit))
+      // The handler forwards BOTH `limit` and `threadLimit`, but they
+      // mean the same thing for the user: "first N of everything".
+      // We use whichever is present (preferring `threadLimit` if both
+      // arrive, since that is what the UI's "Max threads" input sends).
+      const incoming = (message as Record<string, unknown>).threadLimit;
+      const cap = typeof incoming === 'number' && !Number.isNaN(incoming)
+        ? incoming
+        : clampLimit(message.limit);
+      Promise.resolve(scrapeAll(cap))
         .then(safeSend)
         .catch((err: unknown) => {
           console.error('[Content] Scrape-all threw:', err);
@@ -496,6 +506,70 @@ function pickMessageList(): HTMLElement | null {
   return null;
 }
 
+/**
+ * Find the scrollable ancestor of the message list so we can load older
+ * history by scrolling it to the top. LinkedIn's thread view only renders
+ * the visible portion of the message stream and lazy-loads the rest as
+ * the user scrolls toward the top. Without this, "scrape thread" returns
+ * only the messages currently in the viewport.
+ */
+function findMessageListScrollContainer(
+  list: HTMLElement,
+): HTMLElement | null {
+  let el: HTMLElement | null = list;
+  let depth = 0;
+  while (el && depth < 6) {
+    const style = window.getComputedStyle(el);
+    const scrollable =
+      style.overflowY === 'auto' || style.overflowY === 'scroll';
+    if (scrollable && el.scrollHeight > el.clientHeight + 4) {
+      return el;
+    }
+    el = el.parentElement;
+    depth += 1;
+  }
+  return null;
+}
+
+/**
+ * Scroll the message list container to the top repeatedly so LinkedIn
+ * virtualises the older messages into the DOM. Returns the iteration
+ * count and the final message-node count.
+ */
+async function scrollMessageListForFullThread(
+  list: HTMLElement,
+): Promise<{ iterations: number; finalCount: number }> {
+  const container = findMessageListScrollContainer(list);
+  if (!container) {
+    return { iterations: 0, finalCount: pickMessageEventNodes(list).length };
+  }
+
+  let lastCount = pickMessageEventNodes(list).length;
+  let stableCount = 0;
+  let iterations = 0;
+  const MAX_ITERATIONS = 30;
+  for (let i = 0; i < MAX_ITERATIONS; i += 1) {
+    iterations = i + 1;
+    container.scrollTop = 0;
+    await sleep(450);
+    const current = pickMessageEventNodes(list).length;
+    console.log(
+      '[Content] Thread scroll iter',
+      iterations,
+      ': messages =',
+      current,
+    );
+    if (current <= lastCount) {
+      stableCount += 1;
+      if (stableCount >= 2) break;
+    } else {
+      stableCount = 0;
+      lastCount = current;
+    }
+  }
+  return { iterations, finalCount: pickMessageEventNodes(list).length };
+}
+
 function pickMessageEventNodes(list: HTMLElement): HTMLElement[] {
   return Array.from(
     list.querySelectorAll<HTMLElement>('li.msg-s-message-list__event'),
@@ -617,13 +691,25 @@ function normaliseBodyText(el: HTMLElement): string {
 const THREAD_NAV_DELAY_MS = 2000;
 const THREAD_NAV_TIMEOUT_MS = 8000;
 
-async function scrapeAll(
-  limit: number,
-  threadLimit: number = 0,
-): Promise<ScrapeAllResponse> {
+/**
+ * Combined scrape: auto-scroll the inbox AND click through up to `cap`
+ * conversations to scrape their full threads. A single `cap` is used for
+ * BOTH the inbox row count and the per-thread click-through so the
+ * user-facing input "Max threads: N" maps to "first N of everything".
+ *
+ * Returns:
+ *   - `conversations`:  capped inbox rows (size <= `cap`)
+ *   - `threads`:        per-thread messages keyed by LinkedIn URN
+ *   - `threadsScraped`: number of threads successfully scraped
+ *   - `scrollIterations`: how many inbox scroll passes were needed
+ */
+async function scrapeAll(cap: number = 0): Promise<ScrapeAllResponse> {
   if (!isLinkedInMessagesPage()) {
     return { success: false, error: 'Not on a LinkedIn messaging page.' };
   }
+
+  // Normalize the cap so a missing / bogus value clamps to 0.
+  const safeCap = Math.min(Math.max(0, Math.floor(cap) || 0), MAX_LIMIT);
 
   // 1) Auto-scroll + extract inbox conversations.
   let conversationItems: Element[];
@@ -637,10 +723,14 @@ async function scrapeAll(
     conversationItems = Array.from(pickConversationItems());
   }
 
+  // The inbox cap MUST be applied to the response - otherwise we leak the
+  // full sidebar back to the UI when the user asked for "5" (the original
+  // bug: 61 inbox rows when the user asked for 5 threads).
+  const inboxCap = safeCap;
   const conversations: Conversation[] = [];
   if (conversationItems.length > 0) {
     conversationItems.forEach((item, index) => {
-      if (index >= limit) return;
+      if (index >= inboxCap) return;
       const conv = extractConversation(item, index);
       if (conv) conversations.push(conv);
     });
@@ -651,97 +741,224 @@ async function scrapeAll(
     conversations.length,
     'conversations after',
     scrollIterations,
-    'scroll iterations',
+    'scroll iterations (cap=',
+    safeCap,
+    ', sidebar had',
+    conversationItems.length,
+    ')',
   );
 
-  // 2) If threadLimit > 0, click through up to N conversations to scrape
-  //    their threads too. We use LinkedIn's natural UI (clicking the
+  // 2) Click through up to `safeCap` conversations to scrape their full
+  //    thread history. We use LinkedIn's natural UI (clicking the
   //    conversation item) instead of direct URL navigation so the SPA's
   //    router handles the transition the same way a user would. This
   //    keeps the inbox visible throughout.
+  //
+  //    IMPORTANT: we re-query the conversation items on every iteration
+  //    because the SPA can replace sidebar DOM nodes between clicks
+  //    (marking items read, adding active state, etc.) and our captured
+  //    references would otherwise be stale.
   const threads: Record<string, ConversationMessage[]> = {};
-  if (threadLimit > 0) {
-    const cap = Math.min(threadLimit, conversationItems.length);
-    for (let i = 0; i < cap; i += 1) {
-      const item = conversationItems[i];
-      if (!item) continue;
-      const link = pickConversationLink(item);
-      if (!link) {
-        console.warn('[Content] No clickable link for conversation', i, '- skipping');
-        continue;
-      }
+  const totalThreadMessages = await scrapeThreadsByClicking(
+    safeCap,
+    threads,
+  );
 
-      logProgress(`Scraping thread ${i + 1}/${cap}...`);
-      triggerClick(link);
-      const navigated = await waitForUrl(/messaging\/thread\//i, THREAD_NAV_TIMEOUT_MS);
-      if (!navigated) {
-        console.warn('[Content] Thread', i + 1, 'did not navigate, giving up');
-        break;
-      }
-      // LinkedIn virtualises the thread messages - give them a beat to render.
-      await sleep(1500);
-
-      const thread = scrapeThreadMessages();
-      if (thread.success && thread.messages) {
-        const urn = thread.threadId ?? getThreadId();
-        threads[urn] = thread.messages;
-        console.log(
-          '[Content] Thread',
-          i + 1,
-          'scraped:',
-          thread.messages.length,
-          'messages (urn',
-          urn,
-          ')',
-        );
-      } else {
-        console.warn('[Content] Thread', i + 1, 'scrape failed:', thread.error);
-        break;
-      }
-
-      // Don't sleep after the LAST thread - we're done.
-      if (i < cap - 1) {
-        await sleep(THREAD_NAV_DELAY_MS);
-      }
-    }
-
-    // Best-effort: navigate back to the inbox so the user sees the full
-    // list again. If this fails (e.g. they navigated manually), the
-    // thread scrape is still saved.
-    if (isLinkedInThreadPage() && conversationItems.length > 0) {
-      try {
-        const firstLink = pickConversationLink(conversationItems[0]);
-        if (firstLink) {
-          triggerClick(firstLink);
-          await waitForUrl(/\/messaging\/?$/i, 3000);
-        } else {
-          // Fall back to a direct URL change.
-          window.history.pushState({}, '', '/messaging/');
-        }
-      } catch (err) {
-        console.warn('[Content] Could not return to inbox:', err);
-      }
-    }
-  } else if (isLinkedInThreadPage()) {
-    // threadLimit === 0 means: don't auto-scrape extra threads, but still
-    // pick up the currently-open one if any.
-    const thread = scrapeThreadMessages();
-    if (thread.success && thread.messages) {
-      threads[thread.threadId ?? getThreadId()] = thread.messages;
-    }
-  }
+  const threadsScraped = Object.keys(threads).length;
+  console.log(
+    '[Content] Scrape-all done:',
+    conversations.length,
+    'inbox conversations,',
+    threadsScraped,
+    'threads,',
+    totalThreadMessages,
+    'total messages',
+  );
 
   return {
     success: true,
     conversations,
     threads,
+    threadsScraped,
     threadId: isLinkedInThreadPage() ? getThreadId() : undefined,
     messages: undefined,
     scrollIterations,
     count:
       conversations.length +
-      Object.values(threads).reduce((sum, msgs) => sum + msgs.length, 0),
+      totalThreadMessages,
   };
+}
+
+/**
+ * Wait for the message-list container to render after a thread page
+ * navigation. Polls `pickMessageList()` until it returns a non-null
+ * element OR the timeout expires. Returns the element (or `null`).
+ *
+ * The LinkedIn SPA sometimes takes > 1.5 s after the URL changes to
+ * actually mount the message list - the previous fixed sleep caused
+ * "only got the last message" bugs when the SPA was slow.
+ */
+async function waitForMessageList(
+  timeoutMs: number,
+): Promise<HTMLElement | null> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const list = pickMessageList();
+    if (list && pickMessageEventNodes(list).length > 0) {
+      return list;
+    }
+    await sleep(150);
+  }
+  return pickMessageList();
+}
+
+/**
+ * Click through up to `cap` conversations in the inbox sidebar and
+ * scrape their full message threads. Populates the `threads` map keyed
+ * by LinkedIn URN. Returns the total message count across all scraped
+ * threads.
+ */
+async function scrapeThreadsByClicking(
+  cap: number,
+  threads: Record<string, ConversationMessage[]>,
+): Promise<number> {
+  if (cap <= 0) {
+    // cap === 0 means "don't auto-click"; pick up the currently-open
+    // thread only (if the user was already viewing one).
+    if (isLinkedInThreadPage()) {
+      const thread = scrapeThreadMessages();
+      if (thread.success && thread.messages && thread.messages.length > 0) {
+        threads[thread.threadId ?? getThreadId()] = thread.messages;
+        return thread.messages.length;
+      }
+    }
+    return 0;
+  }
+
+  let totalMessages = 0;
+  for (let i = 0; i < cap; i += 1) {
+    // ALWAYS re-query the conversation items; sidebar DOM is unstable
+    // across SPA navigations.
+    const liveItems = Array.from(pickConversationItems());
+    if (i >= liveItems.length) {
+      console.warn(
+        '[Content] Conversation index',
+        i,
+        'out of range (sidebar has',
+        liveItems.length,
+        'items); stopping thread loop',
+      );
+      break;
+    }
+    const item = liveItems[i];
+    const link = pickConversationLink(item);
+    if (!link) {
+      console.warn(
+        '[Content] No clickable link for conversation',
+        i,
+        '- skipping',
+      );
+      continue;
+    }
+
+    logProgress(`Scraping thread ${i + 1}/${cap}...`);
+    triggerClick(link);
+    const navigated = await waitForUrl(
+      /messaging\/thread\//i,
+      THREAD_NAV_TIMEOUT_MS,
+    );
+    if (!navigated) {
+      console.warn(
+        '[Content] Thread',
+        i + 1,
+        'did not navigate, continuing to next',
+      );
+      continue;
+    }
+
+    // Wait for the message list to actually render, then scroll it to
+    // load older history. This is the fix for "only got the last message":
+    // a fixed 1.5 s sleep wasn't enough for slow SPA renders.
+    const list = await waitForMessageList(THREAD_NAV_TIMEOUT_MS);
+    if (!list) {
+      console.warn(
+        '[Content] Thread',
+        i + 1,
+        'navigated but message list never appeared; skipping',
+      );
+      continue;
+    }
+
+    await scrollMessageListForFullThread(list);
+
+    // Re-collect the (now-complete) message list - it may have grown
+    // during scrolling.
+    const messageNodes = pickMessageEventNodes(list);
+    const messagesFromNodeList: ConversationMessage[] = [];
+    let currentDay: string | null = null;
+    messageNodes.forEach((node, idx) => {
+      const dayHeadingEl = node.querySelector(
+        '.msg-s-message-list__time-heading',
+      );
+      if (dayHeadingEl) {
+        currentDay = dayHeadingEl.textContent?.trim() ?? null;
+        return;
+      }
+      const message = extractThreadMessage(node, getThreadId(), currentDay);
+      if (message) {
+        message.needsReply =
+          idx === messageNodes.length - 1 && message.direction === 'inbound';
+        messagesFromNodeList.push(message);
+      }
+    });
+
+    if (messagesFromNodeList.length > 0) {
+      const urn = getThreadId();
+      threads[urn] = messagesFromNodeList;
+      totalMessages += messagesFromNodeList.length;
+      console.log(
+        '[Content] Thread',
+        i + 1,
+        'scraped:',
+        messagesFromNodeList.length,
+        'messages (urn',
+        urn,
+        ')',
+      );
+    } else {
+      console.warn(
+        '[Content] Thread',
+        i + 1,
+        'scrape produced 0 messages, continuing to next',
+      );
+    }
+
+    // Don't sleep after the LAST thread - we're done.
+    if (i < cap - 1) {
+      await sleep(THREAD_NAV_DELAY_MS);
+    }
+  }
+
+  // Best-effort: navigate back to the inbox so the user sees the full
+  // list again. If this fails (e.g. they navigated manually), the
+  // thread scrape is still saved.
+  if (isLinkedInThreadPage()) {
+    try {
+      const liveItems = Array.from(pickConversationItems());
+      const firstLink = liveItems.length > 0 ? pickConversationLink(liveItems[0]) : null;
+      if (firstLink) {
+        triggerClick(firstLink);
+        await waitForUrl(/\/messaging\/?$/i, 3000);
+      } else {
+        // Fall back to a direct URL change.
+        window.history.pushState({}, '', '/messaging/');
+      }
+    } catch (err) {
+      console.warn('[Content] Could not return to inbox:', err);
+    }
+  }
+
+  return totalMessages;
 }
 
 /**

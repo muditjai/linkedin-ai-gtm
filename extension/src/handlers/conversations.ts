@@ -344,6 +344,11 @@ interface ScrapeAllPayload {
   threadId?: string;
   messages?: ConversationMessage[];
   scrollIterations?: number;
+  /** Per-thread messages keyed by the LinkedIn URN. Populated when the
+   *  content script clicked through multiple conversations. */
+  threads?: Record<string, ConversationMessage[]>;
+  /** How many conversation threads the scraper actually opened + scraped. */
+  threadsScraped?: number;
   error?: string;
 }
 
@@ -357,10 +362,23 @@ async function scrapeAll(
   conversations: Conversation[];
   threadId: string | null;
   messages: ConversationMessage[];
+  threads: Record<string, ConversationMessage[]>;
+  threadsScraped: number;
   scrollIterations: number;
 }>> {
   const limit = message.limit ?? 200;
-  console.log('[Conversations] Scrape-all (limit=', limit, ')');
+  // The user-facing "Max threads" input drives BOTH the inbox cap and the
+  // per-thread click-through cap, so we MUST forward both. The previous
+  // version dropped `threadLimit` on the floor here, which caused the
+  // "asked for 5, got 61" + "0 threads" regression.
+  const threadLimit = message.threadLimit ?? limit;
+  console.log(
+    '[Conversations] Scrape-all (limit=',
+    limit,
+    ', threadLimit=',
+    threadLimit,
+    ')',
+  );
 
   const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/messaging*' });
   if (tabs.length === 0) {
@@ -397,10 +415,10 @@ async function scrapeAll(
     }
   }
 
-  let response = await trySendScrapeAll(linkedInTab.id, limit);
+  let response = await trySendScrapeAll(linkedInTab.id, limit, threadLimit);
   if (!response) {
     await sleep(SECOND_RETRY_DELAY_MS);
-    response = await trySendScrapeAll(linkedInTab.id, limit);
+    response = await trySendScrapeAll(linkedInTab.id, limit, threadLimit);
   }
 
   if (!response) {
@@ -414,30 +432,60 @@ async function scrapeAll(
   const messages = (response.messages as ConversationMessage[]) ?? [];
   const threadId = (response.threadId as string | null) ?? null;
   const scrollIterations = (response.scrollIterations as number | undefined) ?? 0;
+  // CRITICAL: the content script returns its per-thread messages as a
+  // Record keyed by LinkedIn URN. The previous version silently dropped
+  // this, so the UI always showed "0 threads (0 messages)" even when the
+  // click-through had actually worked. Propagate it through both the data
+  // payload AND the top-level response so the button can read it either way.
+  const threads =
+    (response.threads as Record<string, ConversationMessage[]> | undefined) ?? {};
+  const threadsScraped =
+    (response.threadsScraped as number | undefined) ?? Object.keys(threads).length;
 
   await chrome.storage.local.set({
     conversations,
     messages,
+    threads,
     threadId,
     lastScrapeAllAt: new Date().toISOString(),
   });
 
   return {
     success: true,
-    data: { conversations, threadId, messages, scrollIterations },
-    count: conversations.length + messages.length,
+    data: {
+      conversations,
+      threadId,
+      messages,
+      threads,
+      threadsScraped,
+      scrollIterations,
+    },
+    // Surface `threads` and `threadsScraped` at the TOP LEVEL too -
+    // modules/buttons.ts reads them off the response directly (not from
+    // `data`), so we need both paths populated.
+    threads,
+    threadsScraped,
+    count:
+      conversations.length +
+      Object.values(threads).reduce((sum, msgs) => sum + msgs.length, 0),
   };
 }
 
 async function trySendScrapeAll(
   tabId: number,
   limit: number,
+  threadLimit: number,
 ): Promise<ScrapeAllPayload | null> {
   for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
     try {
+      // Forward BOTH `limit` and `threadLimit`. The content script uses
+      // `threadLimit` to cap both the inbox scrape and the per-thread
+      // click-through; dropping it here caused the
+      // "asked for 5, got 61 / 0 threads" regression.
       const response = await chrome.tabs.sendMessage(tabId, {
         type: 'SCRAPE_ALL',
         limit,
+        threadLimit,
       });
       if (response) return response as ScrapeAllPayload;
       console.warn(`[Conversations] SCRAPE_ALL returned empty (attempt ${attempt})`);
