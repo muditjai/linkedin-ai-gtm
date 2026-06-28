@@ -26,6 +26,9 @@ interface ScrapeResponse extends ExtensionResponse {
 export function setupButtons(): void {
   console.log('[Buttons] Setting up button listeners');
 
+  onClick('btnScrapeAll', () => {
+    void scrapeAll();
+  });
   onClick('btnScrape', () => {
     void scrapeConversations();
   });
@@ -186,6 +189,73 @@ async function executeSequence(): Promise<void> {
   } catch (error) {
     console.error('[Buttons] Error executing sequence:', error);
     logStatus(`Execution failed: ${(error as Error).message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+/**
+ * Combined Scrape All: auto-scroll the inbox AND scrape the current
+ * thread (if one is open) in a single round-trip. Updates the inbox list
+ * AND the thread pane at once, and surfaces scroll iterations + counts in
+ * the activity log so the user can see what happened.
+ */
+async function scrapeAll(): Promise<void> {
+  const btn = document.getElementById('btnScrapeAll') as HTMLButtonElement | null;
+  if (!btn) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent ?? 'Scrape All (with scroll)';
+  const limit = readScrapeLimit();
+  btn.textContent = 'Scraping…';
+  logStatus(`Scrape All requested (limit=${limit})…`, 'info');
+
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: 'SCRAPE_ALL',
+      limit,
+    } as ExtensionMessage)) as ExtensionResponse<{
+      conversations: Conversation[];
+      threadId: string | null;
+      messages: ConversationMessage[];
+      scrollIterations: number;
+    }>;
+
+    if (response.success && response.data) {
+      const { conversations, messages, threadId, scrollIterations } = response.data;
+
+      if (conversations) {
+        window.popupState.conversations = conversations;
+        renderContacts();
+        updateConversationCount();
+        const convCountEl = document.getElementById('conversationCount');
+        if (convCountEl) convCountEl.textContent = String(conversations.length);
+      }
+
+      if (messages && messages.length > 0) {
+        window.popupState.threadMessages = messages;
+        window.popupState.activeThreadId = threadId ?? null;
+        renderThread(messages, threadId ?? null);
+        updateThreadCount(messages.length);
+      }
+
+      const itersEl = document.getElementById('scrollIterations');
+      if (itersEl) itersEl.textContent = String(scrollIterations ?? 0);
+
+      recordScrape();
+      await loadDashboard();
+      logStatus(
+        `Scrape All complete: ${conversations?.length ?? 0} conversations ` +
+          `(scrolled ${scrollIterations ?? 0}×) + ${messages?.length ?? 0} thread messages.`,
+        'success',
+      );
+    } else {
+      logStatus(`Scrape All failed: ${response.error ?? 'unknown error'}`, 'error');
+    }
+  } catch (error) {
+    console.error('[Buttons] Scrape All error:', error);
+    logStatus(`Scrape All failed: ${(error as Error).message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;

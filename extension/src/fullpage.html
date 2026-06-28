@@ -57,14 +57,17 @@
       <div class="rounded-xl bg-white p-6 shadow-card">
         <h3 class="mb-4 text-base font-semibold">Scrape</h3>
         <div class="mb-4 flex flex-wrap items-center gap-3">
-          <input type="number" id="scrapeCount" class="input w-32" value="20" min="1" max="100" placeholder="Count">
-          <button id="btnScrape" class="btn-primary">Scrape Conversations</button>
-          <button id="btnScrapeThread" class="btn-primary">Scrape Messages</button>
+          <input type="number" id="scrapeCount" class="input w-32" value="200" min="1" max="500" placeholder="Count">
+          <button id="btnScrapeAll" class="btn-primary">Scrape All (with scroll)</button>
+          <button id="btnScrape" class="btn-secondary">Inbox only</button>
+          <button id="btnScrapeThread" class="btn-secondary">Thread only</button>
           <button id="btnTestConnection" class="btn-secondary">Test Connection</button>
         </div>
         <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">
           <div class="flex justify-between"><span>Last scrape:</span><span id="lastScrapeTime">Never</span></div>
           <div class="mt-1 flex justify-between"><span>Tab URL:</span><span id="linkedinTabUrl" class="truncate ml-2">—</span></div>
+          <div class="mt-1 flex justify-between"><span>Inbox conversations:</span><span id="conversationCount" class="font-semibold text-gray-700">0</span></div>
+          <div class="mt-1 flex justify-between"><span>Scroll iterations:</span><span id="scrollIterations" class="font-semibold text-gray-700">0</span></div>
           <div class="mt-1 flex justify-between"><span>Thread messages:</span><span id="threadMessageCount" class="font-semibold text-gray-700">0</span></div>
         </div>
       </div>

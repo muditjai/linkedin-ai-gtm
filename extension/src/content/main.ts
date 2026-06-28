@@ -1,14 +1,15 @@
 /**
  * LinkedIn AI GTM - Content Script
  *
- * Runs inside LinkedIn messaging pages. Two responsibilities:
+ * Runs inside LinkedIn messaging pages. Three responsibilities:
  *
- *   1. SCRAPE_CONVERSATIONS - read the conversation list from the inbox
+ *   1. SCRAPE_CONVERSATIONS  - read the conversation list from the inbox
  *      sidebar (one row per LinkedIn conversation).
- *
- *   2. SCRAPE_THREAD - read every message in the currently-open thread
- *      (the page the user is looking at, e.g.
- *      linkedin.com/messaging/thread/2-...).
+ *   2. SCRAPE_THREAD         - read every message in the currently-open
+ *      thread (linkedin.com/messaging/thread/...).
+ *   3. SCRAPE_ALL            - the combined call: auto-scroll the inbox
+ *      to load the full list of conversations AND, if a thread is open,
+ *      scrape its messages - returning everything in one response.
  *
  * IMPORTANT: This file MUST NOT use ES module syntax (`import` / `export`).
  * Chrome loads content scripts as regular scripts, not modules - a stray
@@ -57,6 +58,7 @@ interface ExtensionResponse {
   conversations?: Conversation[];
   threadId?: string;
   messages?: ConversationMessage[];
+  scrollIterations?: number;
   error?: string;
   count?: number;
   message?: string;
@@ -65,6 +67,7 @@ interface ExtensionResponse {
 
 interface ScrapeConversationsResponse extends ExtensionResponse {
   conversations?: Conversation[];
+  scrollIterations?: number;
 }
 
 interface ScrapeThreadResponse extends ExtensionResponse {
@@ -72,10 +75,21 @@ interface ScrapeThreadResponse extends ExtensionResponse {
   messages?: ConversationMessage[];
 }
 
+interface ScrapeAllResponse extends ExtensionResponse {
+  conversations?: Conversation[];
+  threadId?: string;
+  messages?: ConversationMessage[];
+  scrollIterations?: number;
+}
+
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const LOADED_FLAG = '__linkedinAiGtmContentLoaded';
 const LOADED_AT = '__linkedinAiGtmContentLoadedAt';
+
+const SCROLL_MAX_ITERATIONS = 50;
+const SCROLL_STABLE_THRESHOLD = 3;
+const SCROLL_WAIT_MS = 500;
 
 /* ---------------------------------------------------------------------------
  * Top-level error guards
@@ -128,6 +142,17 @@ function boot(): void {
       return true;
     }
 
+    if (message.type === 'SCRAPE_ALL') {
+      const limit = clampLimit(message.limit);
+      Promise.resolve(scrapeAll(limit))
+        .then(safeSend)
+        .catch((err: unknown) => {
+          console.error('[Content] Scrape-all threw:', err);
+          safeSend({ success: false, error: (err as Error).message });
+        });
+      return true;
+    }
+
     safeSend({ success: false, error: 'Unknown message type' });
     return false;
   });
@@ -140,8 +165,16 @@ function clampLimit(raw: number | undefined): number {
   return Math.min(MAX_LIMIT, Math.max(1, raw));
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function isLinkedInMessagesPage(): boolean {
   return /linkedin\.com\/messaging/i.test(window.location.href);
+}
+
+function isLinkedInThreadPage(): boolean {
+  return /linkedin\.com\/messaging\/thread\//i.test(window.location.href);
 }
 
 /**
@@ -181,7 +214,7 @@ function scrapeConversations(limit: number): ScrapeConversationsResponse {
     });
 
     console.log('[Content] Scraped', conversations.length, 'conversations');
-    return { success: true, conversations };
+    return { success: true, conversations, scrollIterations: 0 };
   } catch (error) {
     console.error('[Content] Scrape error:', error);
     return { success: false, error: (error as Error).message };
@@ -241,6 +274,107 @@ function extractConversation(item: Element, index: number): Conversation | null 
       'msg-conversations-container__convo-item--unread',
     ),
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * Auto-scroll: walk down the inbox sidebar to load every conversation
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Find the scrollable ancestor that contains the conversation list. We walk
+ * up the DOM from a known list item until we hit an element whose computed
+ * `overflow-y` is `auto` or `scroll` AND whose content actually overflows.
+ *
+ * Falls back to a few known selectors if the heuristic fails.
+ */
+function findScrollContainer(item: Element): HTMLElement | null {
+  let el: HTMLElement | null = item.parentElement;
+  let depth = 0;
+  while (el && depth < 10) {
+    const style = window.getComputedStyle(el);
+    const overflowY = style.overflowY;
+    const scrollableY = overflowY === 'auto' || overflowY === 'scroll';
+    if (scrollableY && el.scrollHeight > el.clientHeight + 4) {
+      return el;
+    }
+    el = el.parentElement;
+    depth += 1;
+  }
+
+  const fallbacks = [
+    '.msg-conversations-container',
+    '.msg-conversation-list',
+    '[class*="msg-conversations-container"]',
+    '[class*="conversation-list"]',
+  ];
+  for (const sel of fallbacks) {
+    const found = document.querySelector<HTMLElement>(sel);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Iteratively scroll the inbox list to its bottom so LinkedIn virtualises
+ * in more rows, then return the fully-populated NodeList.
+ *
+ * - Caps at `SCROLL_MAX_ITERATIONS` so we never spin forever.
+ * - Stops early once the count has been stable for `SCROLL_STABLE_THRESHOLD`
+ *   iterations in a row (i.e. we hit the end of the list).
+ */
+async function scrollAndCollectConversationItems(): Promise<{
+  items: Element[];
+  iterations: number;
+}> {
+  const initial = Array.from(pickConversationItems());
+  if (initial.length === 0) return { items: initial, iterations: 0 };
+
+  const container = findScrollContainer(initial[0]);
+  if (!container) {
+    console.warn(
+      '[Content] Could not find scrollable ancestor; using initial items only',
+    );
+    return { items: initial, iterations: 0 };
+  }
+
+  let lastCount = initial.length;
+  let stableCount = 0;
+  let iterations = 0;
+
+  for (let i = 0; i < SCROLL_MAX_ITERATIONS; i += 1) {
+    iterations = i + 1;
+    container.scrollTop = container.scrollHeight;
+    await sleep(SCROLL_WAIT_MS);
+
+    const current = pickConversationItems();
+    if (current.length <= lastCount) {
+      stableCount += 1;
+      if (stableCount >= SCROLL_STABLE_THRESHOLD) {
+        console.log(
+          '[Content] Scroll stable at',
+          current.length,
+          'items after',
+          iterations,
+          'iterations',
+        );
+        break;
+      }
+    } else {
+      console.log(
+        '[Content] Scroll iteration',
+        iterations,
+        ':',
+        lastCount,
+        '->',
+        current.length,
+        'items',
+      );
+      stableCount = 0;
+      lastCount = current.length;
+    }
+  }
+
+  return { items: Array.from(pickConversationItems()), iterations };
 }
 
 /* ---------------------------------------------------------------------------
@@ -433,6 +567,71 @@ function normaliseBodyText(el: HTMLElement): string {
     out += normaliseBodyText(node);
   });
   return out.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* ---------------------------------------------------------------------------
+ * Combined scrape (SCRAPE_ALL): inbox list + thread messages in one shot
+ * ------------------------------------------------------------------------- */
+
+async function scrapeAll(limit: number): Promise<ScrapeAllResponse> {
+  if (!isLinkedInMessagesPage()) {
+    return { success: false, error: 'Not on a LinkedIn messaging page.' };
+  }
+
+  // 1) Auto-scroll + extract inbox conversations.
+  let conversationItems: Element[];
+  let scrollIterations = 0;
+  try {
+    const scrolled = await scrollAndCollectConversationItems();
+    conversationItems = scrolled.items;
+    scrollIterations = scrolled.iterations;
+  } catch (err) {
+    console.error('[Content] Auto-scroll failed, falling back to initial items:', err);
+    conversationItems = Array.from(pickConversationItems());
+  }
+
+  let conversations: Conversation[] = [];
+  if (conversationItems.length > 0) {
+    conversationItems.forEach((item, index) => {
+      if (index >= limit) return;
+      const conv = extractConversation(item, index);
+      if (conv) conversations.push(conv);
+    });
+  }
+
+  console.log(
+    '[Content] Scrape-all:',
+    conversations.length,
+    'conversations after',
+    scrollIterations,
+    'scroll iterations',
+  );
+
+  // 2) If a thread is open, scrape its messages too.
+  let threadId: string | undefined;
+  let messages: ConversationMessage[] | undefined;
+  if (isLinkedInThreadPage()) {
+    const thread = scrapeThreadMessages();
+    if (thread.success) {
+      threadId = thread.threadId;
+      messages = thread.messages;
+      console.log('[Content] Scrape-all: thread', threadId, 'has', messages?.length, 'messages');
+    } else {
+      console.warn(
+        '[Content] Scrape-all: thread scrape failed:',
+        thread.error,
+      );
+    }
+  }
+
+  return {
+    success: true,
+    conversations,
+    threadId,
+    messages,
+    scrollIterations,
+    count: conversations.length + (messages?.length ?? 0),
+  };
 }
 
 console.log('[Content] LinkedIn AI GTM loaded on', window.location.href);

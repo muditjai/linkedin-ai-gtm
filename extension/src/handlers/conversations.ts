@@ -47,6 +47,8 @@ export async function handleConversations(
       return await scrapeConversations(message);
     case 'SCRAPE_THREAD':
       return await scrapeThread(message);
+    case 'SCRAPE_ALL':
+      return await scrapeAll(message);
     case 'TEST_CONNECTION':
       return await testConnection();
     default:
@@ -329,6 +331,118 @@ async function trySendScrape(
       console.warn(`[Conversations] sendMessage returned empty (attempt ${attempt})`);
     } catch (err) {
       console.warn(`[Conversations] sendMessage failed (attempt ${attempt}):`, err);
+    }
+    if (attempt < MAX_SEND_ATTEMPTS) {
+      await sleep(150 * attempt);
+    }
+  }
+  return null;
+}
+
+interface ScrapeAllPayload {
+  conversations?: Conversation[];
+  threadId?: string;
+  messages?: ConversationMessage[];
+  scrollIterations?: number;
+  error?: string;
+}
+
+/**
+ * Combined scrape: auto-scroll the inbox for every conversation AND, if a
+ * thread is open, capture its messages too - all in one round-trip.
+ */
+async function scrapeAll(
+  message: ExtensionMessage,
+): Promise<ExtensionResponse<{
+  conversations: Conversation[];
+  threadId: string | null;
+  messages: ConversationMessage[];
+  scrollIterations: number;
+}>> {
+  const limit = message.limit ?? 200;
+  console.log('[Conversations] Scrape-all (limit=', limit, ')');
+
+  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/messaging*' });
+  if (tabs.length === 0) {
+    return {
+      success: false,
+      error:
+        'No LinkedIn messaging tab is open. Navigate to linkedin.com/messaging first.',
+    };
+  }
+
+  const linkedInTab = tabs[0];
+  if (!linkedInTab.id) {
+    return { success: false, error: 'LinkedIn tab is not accessible.' };
+  }
+
+  // Probe → inject → reprobe, same as the other scrapers.
+  let state = await probeContentScript(linkedInTab.id);
+  if (!state.loaded) {
+    const injected = await injectContentScript(linkedInTab.id);
+    if (!injected.ok) {
+      return {
+        success: false,
+        error: `Content script injection failed: ${injected.reason}.`,
+      };
+    }
+    await sleep(FIRST_RETRY_DELAY_MS);
+    state = await probeContentScript(linkedInTab.id);
+    if (!state.loaded) {
+      return {
+        success: false,
+        error:
+          'Injected content/main.js but the script did not register a listener.',
+      };
+    }
+  }
+
+  let response = await trySendScrapeAll(linkedInTab.id, limit);
+  if (!response) {
+    await sleep(SECOND_RETRY_DELAY_MS);
+    response = await trySendScrapeAll(linkedInTab.id, limit);
+  }
+
+  if (!response) {
+    return {
+      success: false,
+      error: 'Content script did not respond to SCRAPE_ALL.',
+    };
+  }
+
+  const conversations = (response.conversations as Conversation[]) ?? [];
+  const messages = (response.messages as ConversationMessage[]) ?? [];
+  const threadId = (response.threadId as string | null) ?? null;
+  const scrollIterations = (response.scrollIterations as number | undefined) ?? 0;
+
+  await chrome.storage.local.set({
+    conversations,
+    messages,
+    threadId,
+    lastScrapeAllAt: new Date().toISOString(),
+  });
+
+  return {
+    success: true,
+    data: { conversations, threadId, messages, scrollIterations },
+    count: conversations.length + messages.length,
+  };
+}
+
+async function trySendScrapeAll(
+  tabId: number,
+  limit: number,
+): Promise<ScrapeAllPayload | null> {
+  for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, {
+        type: 'SCRAPE_ALL',
+        limit,
+      });
+      if (response) return response as ScrapeAllPayload;
+      console.warn(`[Conversations] SCRAPE_ALL returned empty (attempt ${attempt})`);
+    } catch (err) {
+      console.warn(`[Conversations] SCRAPE_ALL failed (attempt ${attempt}):`, err);
     }
     if (attempt < MAX_SEND_ATTEMPTS) {
       await sleep(150 * attempt);
