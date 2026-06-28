@@ -4,6 +4,7 @@
 
 ### Modular Code & Test Cases
 - Always read the code first before making any changes.
+- Stop adding any bugs as they waste a lot of time. reason properly and deeply about the potential errors before making changes
 - Keep code modular - split large files into smaller, focused modules
 - Don't create super long files - if a file exceeds ~300 lines, consider splitting it
 - Write test cases for new functionality where appropriate
