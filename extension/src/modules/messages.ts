@@ -94,6 +94,14 @@ function renderThreadMessages(
   threadId: string | null,
   conv: Conversation,
 ): void {
+  console.log(
+    '[Messages] renderThreadMessages called for',
+    conv.name,
+    'with',
+    messages.length,
+    'messages, threadId=',
+    threadId,
+  );
   view.replaceChildren();
 
   const header = document.createElement('div');
@@ -271,6 +279,24 @@ export function selectConversation(index: number): void {
         threadId: string | null;
         messages: ConversationMessage[];
       }>;
+
+      console.log(
+        '[Messages] SCRAPE_THREAD_BY_INDEX response for conv',
+        index,
+        '(',
+        conv.name,
+        '):',
+        {
+          success: response.success,
+          error: response.error,
+          threadId: response.data?.threadId,
+          messageCount: response.data?.messages?.length,
+          firstMessage: response.data?.messages?.[0],
+          lastMessage: response.data?.messages?.[
+            (response.data?.messages?.length ?? 1) - 1
+          ],
+        },
+      );
 
       if (response.success && response.data?.messages) {
         const { threadId, messages: threadMessages } = response.data;

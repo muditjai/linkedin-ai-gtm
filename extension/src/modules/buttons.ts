@@ -114,6 +114,39 @@ async function scrapeAll(): Promise<void> {
         0,
       );
 
+      // Diagnostic: log every thread + its message count so the user
+      // can see exactly what the content script produced and whether
+      // each thread is being rendered correctly downstream.
+      console.log(
+        '[Buttons] SCRAPE_ALL received:',
+        conversations.length,
+        'conversations,',
+        threadsScraped,
+        'threads,',
+        totalThreadMessages,
+        'total messages.',
+      );
+      Object.entries(threads).forEach(([urn, msgs]) => {
+        console.log(
+          '[Buttons]   thread',
+          urn.slice(0, 24) + '…',
+          '->',
+          msgs.length,
+          'messages (',
+          msgs
+            .slice(0, 3)
+            .map((m) => m.senderName + ': ' + m.content.slice(0, 30))
+            .join(' | '),
+          '…)',
+        );
+      });
+      console.log(
+        '[Buttons]   activeThreadId:',
+        data?.threadId,
+        'threadsScraped:',
+        threadsScraped,
+      );
+
       // Inbox list.
       if (conversations.length > 0) {
         window.popupState.conversations = conversations;
