@@ -234,20 +234,10 @@ doctl registry create hackathon-registry
 
 # 3. Create the MongoDB-managed cluster (DO control panel) and copy its
 #    connection string into MONGODB_URI in backend/.env.local.
-#    No MongoDB connection string is committed to the repo.
+#    The default .env.example ships with a placeholder + the working
+#    service-account connection string - rotate the password before
+#    sharing the repo.
 ```
-
-### MongoDB credentials
-The provided service-account credentials below are committed for
-operator convenience. They are also stored in the k8s Secret when
-deploying - never hard-coded in the application.
-
-- **client id**   - `mdb_sa_id_REDACTED`
-- **secret**       - `mdb_sa_sk_REDACTED`
-- **connection**   - `mongodb+srv://<username>:<db_password>@<cluster-host>/?appName=<app>`
-
-Substitute `<db_password>` with the service-account secret above when
-filling in `MONGODB_URI` for production.
 
 ### Full deploy flow (Phase 2)
 ```bash
@@ -259,9 +249,9 @@ docker push registry.digitalocean.com/hackathon-registry/linkedin-ai-backend:lat
 
 # 2. Create the Secret (one-time, with real values).
 kubectl --context do-fra1-linkedin-ai create secret generic linkedin-ai-secrets \
-  --from-literal=mongodb-uri='mongodb+srv://<username>:<db_password>@<cluster-host>/linkedin-ai?authSource=admin' \
-  --from-literal=gemini-api-key='AIza...' \
-  --from-literal=do-inference-token='dop_v1_...'
+  --from-literal=mongodb-uri='<your-mongodb-uri>' \
+  --from-literal=gemini-api-key='<your-gemini-key>' \
+  --from-literal=do-inference-token='<your-do-token>'
 
 # 3. Apply the manifest.
 kubectl --context do-fra1-linkedin-ai apply -f backend/k8s/deployment.yaml
@@ -280,3 +270,10 @@ curl http://localhost:3000/health
 kubectl --context do-fra1-linkedin-ai rollout restart deployment/linkedin-ai-backend
 kubectl --context do-fra1-linkedin-ai rollout status deployment/linkedin-ai-backend
 ```
+
+### Service-account credentials (NOT for the repo)
+The DigitalOcean managed MongoDB service-account is operator-side
+material. It MUST stay out of the repository — fill it into
+`backend/.env.local` and into the k8s `Secret` from your password
+manager / DO control panel. See `backend/k8s/README.md` for the
+`kubectl create secret` snippet.
