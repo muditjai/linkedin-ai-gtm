@@ -222,13 +222,35 @@ function scrapeConversations(limit: number): ScrapeConversationsResponse {
 }
 
 function pickConversationItems(): NodeListOf<Element> {
+  // LinkedIn renders the conversation list as a <ul.msg-conversations-
+  // container__conversations-list>. Each row is a <li.msg-conversations-
+  // container__convo-item>. While the user scrolls (or auto-scrolls), the
+  // list also contains placeholder <li> elements with the
+  // `msg-conversation-card--occluded` class - they exist purely to keep
+  // scroll height stable while the next batch of items loads. We must skip
+  // those, otherwise we end up scraping empty rows with placeholder
+  // dimensions and `name = "Unknown"`.
+  const OCCLUDED = ':not(.msg-conversation-card--occluded)';
+
+  // Preferred path: the specific conversations list <ul>.
+  const ul = document.querySelector(
+    'ul.msg-conversations-container__conversations-list',
+  );
+  if (ul) {
+    const real = ul.querySelectorAll<HTMLElement>(
+      `li.msg-conversations-container__convo-item${OCCLUDED}`,
+    );
+    if (real.length > 0) return real;
+  }
+
+  // Fallbacks for older LinkedIn DOMs.
   const selectors = [
-    '.msg-conversations-container__convo-item',
-    'li[class*="conversation-listitem"]',
-    'li[data-conversation-id]',
-    'div.msg-conversation-listitem',
-    'a.msg-conversation-listitem',
-    '.msg-overlay-list-bubble__convo-item',
+    `.msg-conversations-container__convo-item${OCCLUDED}`,
+    `li[class*="conversation-listitem"]${OCCLUDED}`,
+    `li[data-conversation-id]${OCCLUDED}`,
+    `div.msg-conversation-listitem${OCCLUDED}`,
+    `a.msg-conversation-listitem${OCCLUDED}`,
+    `.msg-overlay-list-bubble__convo-item${OCCLUDED}`,
   ];
 
   for (const selector of selectors) {
