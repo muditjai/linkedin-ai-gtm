@@ -571,7 +571,14 @@ function findMessageListScrollContainer(
  * Scroll the message list container to the top repeatedly so LinkedIn
  * virtualises the older messages into the DOM. Returns the iteration
  * count and the final message-node count.
+ *
+ * Perf-aware: stops AS SOON AS we have at least `MAX_MESSAGES_PER_THREAD`
+ * messages in the DOM, since the caller is going to cap the output at
+ * that count anyway. Caps at `MESSAGE_SCROLL_MAX_ITERATIONS` to bound
+ * the wait on very long threads.
  */
+const MESSAGE_SCROLL_MAX_ITERATIONS = 8;
+const MESSAGE_SCROLL_WAIT_MS = 300;
 async function scrollMessageListForFullThread(
   list: HTMLElement,
 ): Promise<{ iterations: number; finalCount: number }> {
@@ -583,11 +590,13 @@ async function scrollMessageListForFullThread(
   let lastCount = pickMessageEventNodes(list).length;
   let stableCount = 0;
   let iterations = 0;
-  const MAX_ITERATIONS = 30;
-  for (let i = 0; i < MAX_ITERATIONS; i += 1) {
+  const startedAt = Date.now();
+
+  for (let i = 0; i < MESSAGE_SCROLL_MAX_ITERATIONS; i += 1) {
     iterations = i + 1;
     container.scrollTop = 0;
-    await sleep(450);
+    await sleep(MESSAGE_SCROLL_WAIT_MS);
+
     const current = pickMessageEventNodes(list).length;
     console.log(
       '[Content] Thread scroll iter',
@@ -595,6 +604,21 @@ async function scrollMessageListForFullThread(
       ': messages =',
       current,
     );
+
+    // Cap-aware short-circuit: if we already have enough messages
+    // for the caller's per-thread cap, no point loading more.
+    if (current >= MAX_MESSAGES_PER_THREAD) {
+      console.log(
+        '[Content] Thread scroll hit per-thread cap (',
+        MAX_MESSAGES_PER_THREAD,
+        ') after',
+        iterations,
+        'iter /',
+        Date.now() - startedAt,
+        'ms',
+      );
+      break;
+    }
     if (current <= lastCount) {
       stableCount += 1;
       if (stableCount >= 2) break;
@@ -603,7 +627,10 @@ async function scrollMessageListForFullThread(
       lastCount = current;
     }
   }
-  return { iterations, finalCount: pickMessageEventNodes(list).length };
+  return {
+    iterations,
+    finalCount: pickMessageEventNodes(list).length,
+  };
 }
 
 function pickMessageEventNodes(list: HTMLElement): HTMLElement[] {
@@ -724,7 +751,7 @@ function normaliseBodyText(el: HTMLElement): string {
  * Combined scrape (SCRAPE_ALL): inbox list + thread messages in one shot
  * ------------------------------------------------------------------------- */
 
-const THREAD_NAV_DELAY_MS = 2000;
+const THREAD_NAV_DELAY_MS = 800;
 const THREAD_NAV_TIMEOUT_MS = 8000;
 
 /**
@@ -1069,6 +1096,7 @@ function logProgress(message: string): void {
 async function scrapeThreadByIndex(
   index: number,
 ): Promise<ScrapeConversationsResponse> {
+  const totalStart = Date.now();
   if (!isLinkedInMessagesPage()) {
     return { success: false, error: 'Not on a LinkedIn messaging page.' };
   }
@@ -1092,6 +1120,7 @@ async function scrapeThreadByIndex(
     };
   }
 
+  const clickStart = Date.now();
   logProgress(`Opening conversation ${index + 1} for thread scrape…`);
   triggerClick(link);
   const navigated = await waitForUrl(/messaging\/thread\//i, THREAD_NAV_TIMEOUT_MS);
@@ -1101,11 +1130,13 @@ async function scrapeThreadByIndex(
       error: 'Click did not navigate to a thread URL. Try clicking manually first.',
     };
   }
+  const navMs = Date.now() - clickStart;
 
   // Wait for the message list to actually render, then scroll it to
   // load older history. The previous version used a fixed 1500 ms sleep
   // here, which on slow SPAs left the message list empty (or with just
   // the latest message) - hence the "only the last message" symptom.
+  const waitStart = Date.now();
   const list = await waitForMessageList(THREAD_NAV_TIMEOUT_MS);
   if (!list) {
     return {
@@ -1114,13 +1145,59 @@ async function scrapeThreadByIndex(
         'Navigated to the thread but the message list never rendered. Try again after manually opening the thread once.',
     };
   }
+  const waitMs = Date.now() - waitStart;
 
-  await scrollMessageListForFullThread(list);
+  const scrollStart = Date.now();
+  const { iterations: scrollIterations } = await scrollMessageListForFullThread(
+    list,
+  );
+  const scrollMs = Date.now() - scrollStart;
 
+  const extractStart = Date.now();
   const thread = scrapeThreadMessages();
+  const extractMs = Date.now() - extractStart;
+  const totalMs = Date.now() - totalStart;
+
   if (!thread.success) {
+    console.warn(
+      '[Content] Thread',
+      index + 1,
+      'scrape failed in',
+      totalMs,
+      'ms (nav=',
+      navMs,
+      'ms, wait=',
+      waitMs,
+      'ms, scroll=',
+      scrollMs,
+      'ms, extract=',
+      extractMs,
+      'ms, iter=',
+      scrollIterations,
+      '):',
+      thread.error,
+    );
     return { success: false, error: thread.error ?? 'Thread scrape failed.' };
   }
+  console.log(
+    '[Content] Thread',
+    index + 1,
+    'scraped',
+    thread.messages?.length ?? 0,
+    'messages in',
+    totalMs,
+    'ms (nav=',
+    navMs,
+    'ms, wait=',
+    waitMs,
+    'ms, scroll=',
+    scrollMs,
+    'ms, extract=',
+    extractMs,
+    'ms, iter=',
+    scrollIterations,
+    ')',
+  );
   return {
     success: true,
     threadId: thread.threadId,
