@@ -115,9 +115,23 @@ export interface PopupState {
   activeConversation: Conversation | null;
 }
 
+/* ---------------------------------------------------------------------------
+ * Activity log
+ *
+ * `fullpage.ts` wires up a DOM-backed activity log and exposes the writer
+ * and counter on `window` for other modules to call. The functions are
+ * optional because the page-side modules may be evaluated before
+ * `fullpage.ts` has run (or during the brief moment before `DOMContentLoaded`).
+ * ------------------------------------------------------------------------- */
+export type LogKind = 'info' | 'success' | 'error' | 'warn';
+export type StatusLogger = (message: string, kind?: LogKind) => void;
+export type ScrapeCounter = () => void;
+
 // Declare global
 declare global {
   interface Window {
     popupState: PopupState;
+    logExtensionStatus?: StatusLogger;
+    recordScrapeCount?: ScrapeCounter;
   }
 }

@@ -6,7 +6,7 @@
  * `window.logExtensionStatus` (set up by `fullpage.ts`).
  */
 
-import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
+import type { Conversation, ExtensionMessage, ExtensionResponse, LogKind } from '../types.js';
 import { loadDashboard } from './dashboard.js';
 import { renderSequencer } from './sequencer.js';
 import { renderContacts } from './messages.js';
@@ -210,29 +210,26 @@ function updateConversationCount(): void {
 
 /* -------------------------------------------------------------------------- *
  * Activity log helpers
- * -------------------------------------------------------------------------- */
-
-type LogKind = 'info' | 'success' | 'error' | 'warn';
+ *
+ * `logExtensionStatus` and `recordScrapeCount` are declared on `Window` in
+ * `src/types.ts`. They are optional because `modules/buttons.ts` may be
+ * evaluated before `fullpage.ts` has finished wiring them up (e.g. if
+ * something fires during the synchronous boot phase).
+ * ------------------------------------------------------------------------- */
 
 /**
  * Push a message into the bottom-of-page activity log. Falls back to the
  * console if `fullpage.ts` hasn't initialised yet.
  */
 function logStatus(message: string, kind: LogKind = 'info'): void {
-  const win = window as Window & {
-    logExtensionStatus?: (m: string, k: LogKind) => void;
-    recordScrapeCount?: () => void;
-  };
-  if (typeof win.logExtensionStatus === 'function') {
-    win.logExtensionStatus(message, kind);
+  if (window.logExtensionStatus) {
+    window.logExtensionStatus(message, kind);
     return;
   }
   console.log(`[Buttons][${kind}] ${message}`);
 }
 
+/** Increment the scrape counter shown in the activity panel header. */
 function recordScrape(): void {
-  const win = window as Window & { recordScrapeCount?: () => void };
-  if (typeof win.recordScrapeCount === 'function') {
-    win.recordScrapeCount();
-  }
+  window.recordScrapeCount?.();
 }

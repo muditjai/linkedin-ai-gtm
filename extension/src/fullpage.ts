@@ -12,13 +12,12 @@ import { setupButtons } from './modules/buttons.js';
 import { loadDashboard } from './modules/dashboard.js';
 import { loadSequencer } from './modules/sequencer.js';
 import { loadConversations, renderContacts } from './modules/messages.js';
+import type { LogKind } from './types.js';
 
 const SCRAPE_LIMIT_MIN = 1;
 const SCRAPE_LIMIT_MAX = 100;
 const SCRAPE_LIMIT_DEFAULT = 20;
 const MAX_LOG_ENTRIES = 200;
-
-type LogKind = 'info' | 'success' | 'error' | 'warn';
 
 interface LogEntry {
   time: number;
@@ -143,12 +142,9 @@ function updateConversationCount(): void {
   }
 }
 
-declare global {
-  interface Window {
-    logExtensionStatus: typeof logStatus;
-    recordScrapeCount: typeof recordScrape;
-  }
-}
+// `logStatus` and `recordScrape` are exposed to other modules via
+// `window.logExtensionStatus` / `window.recordScrapeCount`. The
+// `Window` interface is augmented in `./types.js`.
 window.logExtensionStatus = logStatus;
 window.recordScrapeCount = recordScrape;
 
