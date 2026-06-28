@@ -29,6 +29,9 @@ export function setupButtons(): void {
   onClick('btnScrape', () => {
     void scrapeConversations();
   });
+  onClick('btnScrapeThread', () => {
+    void scrapeThread();
+  });
   onClick('btnTestConnection', () => {
     void testConnection();
   });
@@ -190,6 +193,49 @@ async function executeSequence(): Promise<void> {
 }
 
 /**
+ * Scrape every message in the currently-open LinkedIn thread and push them
+ * into `popupState` so the right-hand thread pane can render them.
+ */
+async function scrapeThread(): Promise<void> {
+  const btn = document.getElementById('btnScrapeThread') as HTMLButtonElement | null;
+  if (!btn) return;
+
+  btn.disabled = true;
+  const originalText = btn.textContent ?? 'Scrape Messages';
+  btn.textContent = 'Scraping…';
+  logStatus('Scrape thread requested (this tab must be a LinkedIn thread page).', 'info');
+
+  try {
+    const response = (await chrome.runtime.sendMessage({
+      type: 'SCRAPE_THREAD',
+    } as ExtensionMessage)) as ExtensionResponse<ConversationMessage[]> & {
+      threadId?: string;
+    };
+
+    if (response.success && response.data) {
+      const messages = response.data;
+      window.popupState.threadMessages = messages;
+      window.popupState.activeThreadId = response.threadId ?? null;
+      recordScrape();
+      renderThread(messages, response.threadId ?? null);
+      updateThreadCount(messages.length);
+      logStatus(
+        `Scraped ${messages.length} message${messages.length === 1 ? '' : 's'} from thread ${response.threadId ?? '(unknown)'}.`,
+        'success',
+      );
+    } else {
+      logStatus(`Thread scrape failed: ${response.error ?? 'unknown error'}`, 'error');
+    }
+  } catch (error) {
+    console.error('[Buttons] Error scraping thread:', error);
+    logStatus(`Thread scrape failed: ${(error as Error).message}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+/**
  * Diagnostic that probes the LinkedIn tab for the content-script
  * loaded flag and reports the result back into the activity log.
  */
@@ -224,6 +270,113 @@ async function testConnection(): Promise<void> {
     console.error('[Buttons] testConnection error:', error);
     logStatus(`Test failed: ${(error as Error).message}`, 'error');
   }
+}
+
+/**
+ * Render scraped thread messages into the right-hand conversation pane.
+ * Safe to call from any state - empty input collapses to the empty state.
+ */
+function renderThread(
+  messages: ConversationMessage[],
+  threadId: string | null,
+): void {
+  const view = document.getElementById('conversationView');
+  const title = document.getElementById('threadTitle');
+  const badge = document.getElementById('threadBadge');
+  if (!view) return;
+
+  view.replaceChildren();
+
+  if (title) {
+    title.textContent = threadId
+      ? `Thread ${threadId.slice(0, 16)}…`
+      : 'Thread';
+  }
+  if (badge) {
+    badge.textContent = String(messages.length);
+    badge.classList.toggle('hidden', messages.length === 0);
+  }
+
+  if (messages.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    const p = document.createElement('p');
+    p.textContent = 'No messages scraped yet.';
+    empty.appendChild(p);
+    view.appendChild(empty);
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'flex flex-col gap-3';
+
+  let lastDay: string | null = null;
+  messages.forEach((msg, idx) => {
+    if (msg.dateHeading && msg.dateHeading !== lastDay) {
+      const divider = document.createElement('div');
+      divider.className =
+        'my-2 flex items-center justify-center text-xs font-semibold uppercase tracking-wide text-gray-400';
+      divider.textContent = msg.dateHeading;
+      list.appendChild(divider);
+      lastDay = msg.dateHeading;
+    }
+    list.appendChild(renderMessageBubble(msg, idx === messages.length - 1));
+  });
+
+  view.appendChild(list);
+  view.scrollTop = view.scrollHeight;
+}
+
+function renderMessageBubble(
+  msg: ConversationMessage,
+  isLast: boolean,
+): HTMLElement {
+  const wrapper = document.createElement('div');
+  const isOutbound = msg.direction === 'outbound';
+  wrapper.className = [
+    'flex flex-col gap-1',
+    isOutbound ? 'items-end' : 'items-start',
+  ].join(' ');
+
+  const meta = document.createElement('div');
+  meta.className = 'flex items-center gap-2 text-xs text-gray-500';
+  const sender = document.createElement('span');
+  sender.className = 'font-semibold text-gray-700';
+  sender.textContent = msg.senderName;
+  const time = document.createElement('span');
+  time.textContent = msg.timestamp;
+  meta.appendChild(sender);
+  meta.appendChild(time);
+  if (msg.edited) {
+    const edited = document.createElement('span');
+    edited.className = 'italic';
+    edited.textContent = '(edited)';
+    meta.appendChild(edited);
+  }
+  if (msg.reactions.length > 0) {
+    const reactions = document.createElement('span');
+    reactions.textContent = ` ${msg.reactions.join(' ')}`;
+    meta.appendChild(reactions);
+  }
+  wrapper.appendChild(meta);
+
+  const bubble = document.createElement('div');
+  bubble.className = [
+    'max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2 text-sm leading-relaxed',
+    isOutbound
+      ? 'rounded-br-sm bg-brand-600 text-white'
+      : 'rounded-bl-sm bg-gray-100 text-gray-900',
+    isLast && msg.needsReply ? 'ring-2 ring-amber-400' : '',
+  ].join(' ');
+  bubble.textContent = msg.content;
+  wrapper.appendChild(bubble);
+
+  return wrapper;
+}
+
+function updateThreadCount(count: number): void {
+  const el = document.getElementById('threadMessageCount');
+  if (el) el.textContent = String(count);
 }
 
 /**

@@ -6,6 +6,7 @@
 export type MessageType =
   | 'GET_CONVERSATIONS'
   | 'SCRAPE_CONVERSATIONS'
+  | 'SCRAPE_THREAD'
   | 'TEST_CONNECTION'
   | 'GET_SEQUENCER'
   | 'SAVE_SEQUENCER'
@@ -44,11 +45,27 @@ export interface Conversation {
 }
 
 export interface ConversationMessage {
+  /** Stable message id (LinkedIn message URN when available, otherwise a synthetic one). */
   id: string;
+  /** Conversation/thread this message belongs to. */
   conversationId: string;
+  /** Display name of the person who sent the message. */
+  senderName: string;
+  /** Avatar image URL or `null` if not available. */
+  senderAvatar: string | null;
+  /** Plain-text body of the message. `<br>` boundaries are converted to `\n`. */
   content: string;
+  /** Whether the message was received (other person) or sent (the current user). */
   direction: 'inbound' | 'outbound';
+  /** Time of day as displayed in the thread (e.g. "1:46 PM"). */
   timestamp: string;
+  /** Day-boundary heading that precedes the message (e.g. "Friday") or `null`. */
+  dateHeading: string | null;
+  /** True if LinkedIn shows the "(Edited)" tag next to this message. */
+  edited: boolean;
+  /** Emoji reactions on the message (e.g. ["👍"]). */
+  reactions: string[];
+  /** True when the message is the most recent in the thread and has no reply yet. */
   needsReply: boolean;
   outcome?: 'positive' | 'negative';
   needsFollowUp: boolean;
@@ -111,6 +128,10 @@ export interface StorageData {
 // Shared popup state
 export interface PopupState {
   conversations: Conversation[];
+  /** Messages scraped from the currently-open LinkedIn thread, if any. */
+  threadMessages: ConversationMessage[];
+  /** LinkedIn URN of the thread that `threadMessages` came from. */
+  activeThreadId: string | null;
   sequencer: Sequencer | null;
   dashboard: Dashboard | null;
   activeConversation: Conversation | null;

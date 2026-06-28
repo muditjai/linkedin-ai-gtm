@@ -30,6 +30,7 @@ const onMessage: Parameters<typeof chrome.runtime.onMessage.addListener>[0] = (
   switch (message.type) {
     case 'GET_CONVERSATIONS':
     case 'SCRAPE_CONVERSATIONS':
+    case 'SCRAPE_THREAD':
     case 'TEST_CONNECTION':
       handleConversations(message, sender).then(sendResponse);
       return true;

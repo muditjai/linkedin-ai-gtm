@@ -38,6 +38,8 @@ async function init(): Promise<void> {
 
   window.popupState = {
     conversations: [],
+    threadMessages: [],
+    activeThreadId: null,
     sequencer: null,
     dashboard: null,
     activeConversation: null,

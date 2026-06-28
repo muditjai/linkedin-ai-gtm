@@ -11,7 +11,12 @@
  * Each step is logged so the user can see exactly which one failed.
  */
 
-import type { Conversation, ExtensionMessage, ExtensionResponse } from '../types.js';
+import type {
+  Conversation,
+  ConversationMessage,
+  ExtensionMessage,
+  ExtensionResponse,
+} from '../types.js';
 
 const FIRST_RETRY_DELAY_MS = 400;
 const SECOND_RETRY_DELAY_MS = 800;
@@ -40,6 +45,8 @@ export async function handleConversations(
       return await getConversations();
     case 'SCRAPE_CONVERSATIONS':
       return await scrapeConversations(message);
+    case 'SCRAPE_THREAD':
+      return await scrapeThread(message);
     case 'TEST_CONNECTION':
       return await testConnection();
     default:
@@ -50,6 +57,101 @@ export async function handleConversations(
 async function getConversations(): Promise<ExtensionResponse<Conversation[]>> {
   const result = await chrome.storage.local.get(['conversations']);
   return { success: true, data: (result.conversations as Conversation[]) || [] };
+}
+
+/**
+ * Pull every message from the LinkedIn thread that the user is currently
+ * looking at and persist them to `chrome.storage.local` so the UI can show
+ * them later.
+ */
+async function scrapeThread(
+  message: ExtensionMessage,
+): Promise<ExtensionResponse<ConversationMessage[]>> {
+  const limit = message.limit ?? 200;
+  console.log('[Conversations] Scraping up to', limit, 'thread messages');
+
+  const tabs = await chrome.tabs.query({ url: '*://*.linkedin.com/messaging*' });
+  if (tabs.length === 0) {
+    return {
+      success: false,
+      error:
+        'No LinkedIn messaging tab is open. Navigate to linkedin.com/messaging/thread/... first.',
+    };
+  }
+
+  const linkedInTab = tabs[0];
+  if (!linkedInTab.id) {
+    return { success: false, error: 'LinkedIn tab is not accessible.' };
+  }
+
+  // Same probe → inject → reprobe pipeline as the inbox scraper, so we
+  // recover gracefully when the content script hasn't loaded yet.
+  let state = await probeContentScript(linkedInTab.id);
+  if (!state.loaded) {
+    const injected = await injectContentScript(linkedInTab.id);
+    if (!injected.ok) {
+      return {
+        success: false,
+        error: `Content script injection failed: ${injected.reason}.`,
+      };
+    }
+    await sleep(FIRST_RETRY_DELAY_MS);
+    state = await probeContentScript(linkedInTab.id);
+    if (!state.loaded) {
+      return {
+        success: false,
+        error:
+          'Injected content/main.js but the script did not register a listener.',
+      };
+    }
+  }
+
+  let response = await trySendScrapeThread(linkedInTab.id, limit);
+  if (!response) {
+    await sleep(SECOND_RETRY_DELAY_MS);
+    response = await trySendScrapeThread(linkedInTab.id, limit);
+  }
+
+  if (response?.messages) {
+    const messages = response.messages as ConversationMessage[];
+    await chrome.storage.local.set({
+      messages,
+      threadId: response.threadId ?? null,
+      threadLastScrapedAt: new Date().toISOString(),
+    });
+    return {
+      success: true,
+      data: messages,
+      count: messages.length,
+      message: response.threadId ?? undefined,
+    };
+  }
+
+  if (response?.error) {
+    return { success: false, error: response.error };
+  }
+
+  return {
+    success: false,
+    error: 'Content script did not respond to SCRAPE_THREAD.',
+  };
+}
+
+async function trySendScrapeThread(
+  tabId: number,
+  limit: number,
+): Promise<{ messages?: ConversationMessage[]; threadId?: string; error?: string } | null> {
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      type: 'SCRAPE_THREAD',
+      limit,
+    });
+    if (response) return response as { messages?: ConversationMessage[]; threadId?: string; error?: string };
+    return null;
+  } catch (err) {
+    console.warn('[Conversations] SCRAPE_THREAD sendMessage failed:', err);
+    return null;
+  }
 }
 
 /**
