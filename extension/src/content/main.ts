@@ -50,6 +50,7 @@ interface ConversationMessage {
 interface ExtensionMessage {
   type: string;
   limit?: number;
+  threadLimit?: number;
   [key: string]: unknown;
 }
 
@@ -144,7 +145,8 @@ function boot(): void {
 
     if (message.type === 'SCRAPE_ALL') {
       const limit = clampLimit(message.limit);
-      Promise.resolve(scrapeAll(limit))
+      const threadLimit = readThreadLimit(message.threadLimit);
+      Promise.resolve(scrapeAll(limit, threadLimit))
         .then(safeSend)
         .catch((err: unknown) => {
           console.error('[Content] Scrape-all threw:', err);
@@ -163,6 +165,12 @@ function boot(): void {
 function clampLimit(raw: number | undefined): number {
   if (!raw || Number.isNaN(raw)) return DEFAULT_LIMIT;
   return Math.min(MAX_LIMIT, Math.max(1, raw));
+}
+
+function readThreadLimit(raw: number | undefined): number {
+  if (raw === undefined || Number.isNaN(raw)) return 5;
+  if (raw < 0) return 0;
+  return Math.min(20, Math.floor(raw));
 }
 
 function sleep(ms: number): Promise<void> {
@@ -595,7 +603,13 @@ function normaliseBodyText(el: HTMLElement): string {
  * Combined scrape (SCRAPE_ALL): inbox list + thread messages in one shot
  * ------------------------------------------------------------------------- */
 
-async function scrapeAll(limit: number): Promise<ScrapeAllResponse> {
+const THREAD_NAV_DELAY_MS = 2000;
+const THREAD_NAV_TIMEOUT_MS = 8000;
+
+async function scrapeAll(
+  limit: number,
+  threadLimit: number = 0,
+): Promise<ScrapeAllResponse> {
   if (!isLinkedInMessagesPage()) {
     return { success: false, error: 'Not on a LinkedIn messaging page.' };
   }
@@ -612,7 +626,7 @@ async function scrapeAll(limit: number): Promise<ScrapeAllResponse> {
     conversationItems = Array.from(pickConversationItems());
   }
 
-  let conversations: Conversation[] = [];
+  const conversations: Conversation[] = [];
   if (conversationItems.length > 0) {
     conversationItems.forEach((item, index) => {
       if (index >= limit) return;
@@ -629,31 +643,133 @@ async function scrapeAll(limit: number): Promise<ScrapeAllResponse> {
     'scroll iterations',
   );
 
-  // 2) If a thread is open, scrape its messages too.
-  let threadId: string | undefined;
-  let messages: ConversationMessage[] | undefined;
-  if (isLinkedInThreadPage()) {
+  // 2) If threadLimit > 0, click through up to N conversations to scrape
+  //    their threads too. We use LinkedIn's natural UI (clicking the
+  //    conversation item) instead of direct URL navigation so the SPA's
+  //    router handles the transition the same way a user would. This
+  //    keeps the inbox visible throughout.
+  const threads: Record<string, ConversationMessage[]> = {};
+  if (threadLimit > 0) {
+    const cap = Math.min(threadLimit, conversationItems.length);
+    for (let i = 0; i < cap; i += 1) {
+      const item = conversationItems[i];
+      if (!item) continue;
+      const link = pickConversationLink(item);
+      if (!link) {
+        console.warn('[Content] No clickable link for conversation', i, '- skipping');
+        continue;
+      }
+
+      logProgress(`Scraping thread ${i + 1}/${cap}...`);
+      link.click();
+      const navigated = await waitForUrl(/messaging\/thread\//i, THREAD_NAV_TIMEOUT_MS);
+      if (!navigated) {
+        console.warn('[Content] Thread', i + 1, 'did not navigate, giving up');
+        break;
+      }
+      // LinkedIn virtualises the thread messages - give them a beat to render.
+      await sleep(1500);
+
+      const thread = scrapeThreadMessages();
+      if (thread.success && thread.messages) {
+        const urn = thread.threadId ?? getThreadId();
+        threads[urn] = thread.messages;
+        console.log(
+          '[Content] Thread',
+          i + 1,
+          'scraped:',
+          thread.messages.length,
+          'messages (urn',
+          urn,
+          ')',
+        );
+      } else {
+        console.warn('[Content] Thread', i + 1, 'scrape failed:', thread.error);
+        break;
+      }
+
+      // Don't sleep after the LAST thread - we're done.
+      if (i < cap - 1) {
+        await sleep(THREAD_NAV_DELAY_MS);
+      }
+    }
+
+    // Best-effort: navigate back to the inbox so the user sees the full
+    // list again. If this fails (e.g. they navigated manually), the
+    // thread scrape is still saved.
+    if (isLinkedInThreadPage() && conversationItems.length > 0) {
+      try {
+        const firstLink = pickConversationLink(conversationItems[0]);
+        if (firstLink) {
+          firstLink.click();
+          await waitForUrl(/\/messaging\/?$/i, 3000);
+        } else {
+          // Fall back to a direct URL change.
+          window.history.pushState({}, '', '/messaging/');
+        }
+      } catch (err) {
+        console.warn('[Content] Could not return to inbox:', err);
+      }
+    }
+  } else if (isLinkedInThreadPage()) {
+    // threadLimit === 0 means: don't auto-scrape extra threads, but still
+    // pick up the currently-open one if any.
     const thread = scrapeThreadMessages();
-    if (thread.success) {
-      threadId = thread.threadId;
-      messages = thread.messages;
-      console.log('[Content] Scrape-all: thread', threadId, 'has', messages?.length, 'messages');
-    } else {
-      console.warn(
-        '[Content] Scrape-all: thread scrape failed:',
-        thread.error,
-      );
+    if (thread.success && thread.messages) {
+      threads[thread.threadId ?? getThreadId()] = thread.messages;
     }
   }
 
   return {
     success: true,
     conversations,
-    threadId,
-    messages,
+    threads,
+    threadId: isLinkedInThreadPage() ? getThreadId() : undefined,
+    messages: undefined,
     scrollIterations,
-    count: conversations.length + (messages?.length ?? 0),
+    count:
+      conversations.length +
+      Object.values(threads).reduce((sum, msgs) => sum + msgs.length, 0),
   };
+}
+
+/**
+ * Find the clickable element inside a conversation list item. LinkedIn uses
+ * either a focusable div with `tabindex="0"` or a profile-link wrapper -
+ * we need the *row-level* clickable, not the profile link.
+ */
+function pickConversationLink(item: Element): HTMLElement | null {
+  // Prefer the explicit conversation-link div.
+  const link = item.querySelector<HTMLElement>(
+    '.msg-conversation-listitem__link, .msg-conversations-container__convo-item-link',
+  );
+  if (link) return link;
+  // Fall back to the first tabindex=0 descendant that isn't a checkbox.
+  const candidates = Array.from(
+    item.querySelectorAll<HTMLElement>('[tabindex="0"]'),
+  );
+  for (const el of candidates) {
+    if (el.tagName === 'INPUT') continue;
+    return el;
+  }
+  return null;
+}
+
+/**
+ * Poll `window.location.pathname` until it matches `pattern` or the
+ * timeout expires.
+ */
+async function waitForUrl(pattern: RegExp, timeoutMs: number): Promise<boolean> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (pattern.test(window.location.pathname)) return true;
+    await sleep(100);
+  }
+  return false;
+}
+
+function logProgress(message: string): void {
+  console.log('[Content]', message);
 }
 
 console.log('[Content] LinkedIn AI GTM loaded on', window.location.href);

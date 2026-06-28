@@ -6,18 +6,28 @@
  * `window.logExtensionStatus` (set up by `fullpage.ts`).
  */
 
-import type { Conversation, ExtensionMessage, ExtensionResponse, LogKind } from '../types.js';
+import type {
+  Conversation,
+  ConversationMessage,
+  ExtensionMessage,
+  ExtensionResponse,
+  LogKind,
+} from '../types.js';
 import { loadDashboard } from './dashboard.js';
 import { renderSequencer } from './sequencer.js';
 import { renderContacts } from './messages.js';
 
-const DEFAULT_SCRAPE_LIMIT = 20;
-const SCRAPE_LIMIT_MIN = 1;
-const SCRAPE_LIMIT_MAX = 100;
+const DEFAULT_THREAD_LIMIT = 5;
+const THREAD_LIMIT_MIN = 0;
+const THREAD_LIMIT_MAX = 20;
 
-interface ScrapeResponse extends ExtensionResponse {
-  data?: Conversation[];
-  count?: number;
+interface ScrapeAllData {
+  conversations: Conversation[];
+  threadId: string | null;
+  messages: ConversationMessage[];
+  scrollIterations: number;
+  threads: Record<string, ConversationMessage[]>;
+  threadsScraped: number;
 }
 
 /**
@@ -28,12 +38,6 @@ export function setupButtons(): void {
 
   onClick('btnScrapeAll', () => {
     void scrapeAll();
-  });
-  onClick('btnScrape', () => {
-    void scrapeConversations();
-  });
-  onClick('btnScrapeThread', () => {
-    void scrapeThread();
   });
   onClick('btnTestConnection', () => {
     void testConnection();
@@ -64,44 +68,89 @@ function onClick(id: string, handler: () => void): void {
 }
 
 /**
- * Scrape conversations from the active LinkedIn messaging tab.
+ * Combined "Scrape All" action: scrolls the inbox, scrapes the
+ * conversation list, optionally opens up to N conversation threads (via
+ * LinkedIn's own UI - clicking each conversation) and returns everything
+ * in one round-trip.
  */
-async function scrapeConversations(): Promise<void> {
-  const btn = document.getElementById('btnScrape') as HTMLButtonElement | null;
+async function scrapeAll(): Promise<void> {
+  const btn = document.getElementById('btnScrapeAll') as HTMLButtonElement | null;
   if (!btn) return;
 
   btn.disabled = true;
-  const originalText = btn.textContent ?? 'Scrape Conversations';
-  const limit = readScrapeLimit();
-  btn.textContent = `Scraping ${limit}…`;
-  logStatus(`Scrape requested (limit=${limit})…`, 'info');
+  const originalText = btn.textContent ?? 'Scrape All';
+  btn.textContent = 'Scraping…';
+  const threadLimit = readThreadLimit();
+  logStatus(
+    `Scrape All requested (max ${threadLimit} thread${threadLimit === 1 ? '' : 's'})…`,
+    'info',
+  );
 
   try {
     const response = (await chrome.runtime.sendMessage({
-      type: 'SCRAPE_CONVERSATIONS',
-      limit,
-    } as ExtensionMessage)) as ScrapeResponse;
+      type: 'SCRAPE_ALL',
+      threadLimit,
+    } as ExtensionMessage)) as ExtensionResponse<ScrapeAllData> & {
+      threads?: Record<string, ConversationMessage[]>;
+      threadsScraped?: number;
+    };
 
-    if (response.success && response.data) {
-      const conversations = response.data;
-      window.popupState.conversations = conversations;
-      renderContacts();
-      updateConversationCount();
-      await loadDashboard();
+    if (response.success) {
+      const data = response.data;
+      const conversations = data?.conversations ?? [];
+      const threads = response.threads ?? {};
+      const threadsScraped = response.threadsScraped ?? 0;
+      const scrollIterations = data?.scrollIterations ?? 0;
+      const totalThreadMessages = Object.values(threads).reduce(
+        (sum, msgs) => sum + msgs.length,
+        0,
+      );
+
+      // Inbox list.
+      if (conversations.length > 0) {
+        window.popupState.conversations = conversations;
+        renderContacts();
+        updateConversationCount();
+        const convCountEl = document.getElementById('conversationCount');
+        if (convCountEl) {
+          convCountEl.textContent = String(conversations.length);
+        }
+      }
+
+      // Threads collected by the click-through.
+      if (Object.keys(threads).length > 0) {
+        renderThreadsIntoState(threads);
+        // Render whichever thread is currently active (i.e. matches the
+        // open thread page). Fall back to the first one we scraped.
+        const activeUrn = data?.threadId ?? Object.keys(threads)[0];
+        const activeMessages = activeUrn ? threads[activeUrn] : undefined;
+        if (activeMessages) {
+          renderThread(activeMessages, activeUrn ?? null);
+          updateThreadCount(activeMessages.length);
+        }
+      }
+
+      const itersEl = document.getElementById('scrollIterations');
+      if (itersEl) itersEl.textContent = String(scrollIterations);
+
+      const threadsEl = document.getElementById('threadsScraped');
+      if (threadsEl) threadsEl.textContent = String(threadsScraped);
+
       recordScrape();
+      await loadDashboard();
       logStatus(
-        `Scraped ${conversations.length} conversation${conversations.length === 1 ? '' : 's'}.`,
+        `Scrape All complete: ${conversations.length} inbox conversation` +
+          `${conversations.length === 1 ? '' : 's'} + ` +
+          `${threadsScraped} thread${threadsScraped === 1 ? '' : 's'} ` +
+          `(${totalThreadMessages} message${totalThreadMessages === 1 ? '' : 's'}).`,
         'success',
       );
     } else {
-      logStatus(`Scrape failed: ${response.error ?? 'unknown error'}`, 'error');
+      logStatus(`Scrape All failed: ${response.error ?? 'unknown error'}`, 'error');
     }
   } catch (error) {
-    console.error('[Buttons] Error scraping:', error);
-    logStatus(
-      `Scrape failed: ${(error as Error).message}. Reload the LinkedIn tab and try again.`,
-      'error',
-    );
+    console.error('[Buttons] Scrape All error:', error);
+    logStatus(`Scrape All failed: ${(error as Error).message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
@@ -162,9 +211,7 @@ function addSequencerStep(): void {
 }
 
 /**
- * Trigger sequence execution.
- *
- * NOTE: This is a stub until Phase 2 (service backend) is implemented.
+ * Trigger sequence execution. Phase 2 stub.
  */
 async function executeSequence(): Promise<void> {
   const btn = document.getElementById('btnExecute') as HTMLButtonElement | null;
@@ -189,116 +236,6 @@ async function executeSequence(): Promise<void> {
   } catch (error) {
     console.error('[Buttons] Error executing sequence:', error);
     logStatus(`Execution failed: ${(error as Error).message}`, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
-}
-
-/**
- * Combined Scrape All: auto-scroll the inbox AND scrape the current
- * thread (if one is open) in a single round-trip. Updates the inbox list
- * AND the thread pane at once, and surfaces scroll iterations + counts in
- * the activity log so the user can see what happened.
- */
-async function scrapeAll(): Promise<void> {
-  const btn = document.getElementById('btnScrapeAll') as HTMLButtonElement | null;
-  if (!btn) return;
-
-  btn.disabled = true;
-  const originalText = btn.textContent ?? 'Scrape All (with scroll)';
-  const limit = readScrapeLimit();
-  btn.textContent = 'Scraping…';
-  logStatus(`Scrape All requested (limit=${limit})…`, 'info');
-
-  try {
-    const response = (await chrome.runtime.sendMessage({
-      type: 'SCRAPE_ALL',
-      limit,
-    } as ExtensionMessage)) as ExtensionResponse<{
-      conversations: Conversation[];
-      threadId: string | null;
-      messages: ConversationMessage[];
-      scrollIterations: number;
-    }>;
-
-    if (response.success && response.data) {
-      const { conversations, messages, threadId, scrollIterations } = response.data;
-
-      if (conversations) {
-        window.popupState.conversations = conversations;
-        renderContacts();
-        updateConversationCount();
-        const convCountEl = document.getElementById('conversationCount');
-        if (convCountEl) convCountEl.textContent = String(conversations.length);
-      }
-
-      if (messages && messages.length > 0) {
-        window.popupState.threadMessages = messages;
-        window.popupState.activeThreadId = threadId ?? null;
-        renderThread(messages, threadId ?? null);
-        updateThreadCount(messages.length);
-      }
-
-      const itersEl = document.getElementById('scrollIterations');
-      if (itersEl) itersEl.textContent = String(scrollIterations ?? 0);
-
-      recordScrape();
-      await loadDashboard();
-      logStatus(
-        `Scrape All complete: ${conversations?.length ?? 0} conversations ` +
-          `(scrolled ${scrollIterations ?? 0}×) + ${messages?.length ?? 0} thread messages.`,
-        'success',
-      );
-    } else {
-      logStatus(`Scrape All failed: ${response.error ?? 'unknown error'}`, 'error');
-    }
-  } catch (error) {
-    console.error('[Buttons] Scrape All error:', error);
-    logStatus(`Scrape All failed: ${(error as Error).message}`, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalText;
-  }
-}
-
-/**
- * Scrape every message in the currently-open LinkedIn thread and push them
- * into `popupState` so the right-hand thread pane can render them.
- */
-async function scrapeThread(): Promise<void> {
-  const btn = document.getElementById('btnScrapeThread') as HTMLButtonElement | null;
-  if (!btn) return;
-
-  btn.disabled = true;
-  const originalText = btn.textContent ?? 'Scrape Messages';
-  btn.textContent = 'Scraping…';
-  logStatus('Scrape thread requested (this tab must be a LinkedIn thread page).', 'info');
-
-  try {
-    const response = (await chrome.runtime.sendMessage({
-      type: 'SCRAPE_THREAD',
-    } as ExtensionMessage)) as ExtensionResponse<ConversationMessage[]> & {
-      threadId?: string;
-    };
-
-    if (response.success && response.data) {
-      const messages = response.data;
-      window.popupState.threadMessages = messages;
-      window.popupState.activeThreadId = response.threadId ?? null;
-      recordScrape();
-      renderThread(messages, response.threadId ?? null);
-      updateThreadCount(messages.length);
-      logStatus(
-        `Scraped ${messages.length} message${messages.length === 1 ? '' : 's'} from thread ${response.threadId ?? '(unknown)'}.`,
-        'success',
-      );
-    } else {
-      logStatus(`Thread scrape failed: ${response.error ?? 'unknown error'}`, 'error');
-    }
-  } catch (error) {
-    console.error('[Buttons] Error scraping thread:', error);
-    logStatus(`Thread scrape failed: ${(error as Error).message}`, 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = originalText;
@@ -342,10 +279,26 @@ async function testConnection(): Promise<void> {
   }
 }
 
+/* -------------------------------------------------------------------------- *
+ * Rendering helpers
+ * -------------------------------------------------------------------------- */
+
 /**
- * Render scraped thread messages into the right-hand conversation pane.
- * Safe to call from any state - empty input collapses to the empty state.
+ * Push the per-conversation thread messages collected by SCRAPE_ALL into
+ * `popupState` and pick one to display in the right-hand pane.
  */
+function renderThreadsIntoState(
+  threads: Record<string, ConversationMessage[]>,
+): number {
+  const urns = Object.keys(threads);
+  if (urns.length === 0) return 0;
+  const firstUrn = urns[0];
+  const messages = threads[firstUrn] ?? [];
+  window.popupState.threadMessages = messages;
+  window.popupState.activeThreadId = firstUrn;
+  return Object.values(threads).reduce((sum, msgs) => sum + msgs.length, 0);
+}
+
 function renderThread(
   messages: ConversationMessage[],
   threadId: string | null,
@@ -449,21 +402,6 @@ function updateThreadCount(count: number): void {
   if (el) el.textContent = String(count);
 }
 
-/**
- * Read the user's requested scrape limit from `#scrapeCount`, clamped to
- * a sane range.
- */
-function readScrapeLimit(): number {
-  const input = document.getElementById('scrapeCount') as HTMLInputElement | null;
-  if (!input) return DEFAULT_SCRAPE_LIMIT;
-  const raw = parseInt(input.value, 10);
-  if (Number.isNaN(raw)) return DEFAULT_SCRAPE_LIMIT;
-  return Math.min(SCRAPE_LIMIT_MAX, Math.max(SCRAPE_LIMIT_MIN, raw));
-}
-
-/**
- * Update the sidebar conversation counter.
- */
 function updateConversationCount(): void {
   const badge = document.getElementById('convCount');
   if (badge) {
@@ -471,19 +409,26 @@ function updateConversationCount(): void {
   }
 }
 
+/**
+ * Read the user's "max threads to click through" from `#threadLimit`,
+ * clamped to [0, 20]. 0 disables thread scraping entirely.
+ */
+function readThreadLimit(): number {
+  const input = document.getElementById('threadLimit') as HTMLInputElement | null;
+  if (!input) return DEFAULT_THREAD_LIMIT;
+  const raw = parseInt(input.value, 10);
+  if (Number.isNaN(raw)) return DEFAULT_THREAD_LIMIT;
+  return Math.min(THREAD_LIMIT_MAX, Math.max(THREAD_LIMIT_MIN, raw));
+}
+
 /* -------------------------------------------------------------------------- *
  * Activity log helpers
  *
  * `logExtensionStatus` and `recordScrapeCount` are declared on `Window` in
  * `src/types.ts`. They are optional because `modules/buttons.ts` may be
- * evaluated before `fullpage.ts` has finished wiring them up (e.g. if
- * something fires during the synchronous boot phase).
+ * evaluated before `fullpage.ts` has finished wiring them up.
  * ------------------------------------------------------------------------- */
 
-/**
- * Push a message into the bottom-of-page activity log. Falls back to the
- * console if `fullpage.ts` hasn't initialised yet.
- */
 function logStatus(message: string, kind: LogKind = 'info'): void {
   if (window.logExtensionStatus) {
     window.logExtensionStatus(message, kind);
@@ -492,7 +437,6 @@ function logStatus(message: string, kind: LogKind = 'info'): void {
   console.log(`[Buttons][${kind}] ${message}`);
 }
 
-/** Increment the scrape counter shown in the activity panel header. */
 function recordScrape(): void {
   window.recordScrapeCount?.();
 }

@@ -22,6 +22,8 @@ export type MessageType =
 export interface ExtensionMessage {
   type: MessageType;
   limit?: number;
+  /** Cap on how many conversation threads the scraper will click through. */
+  threadLimit?: number;
   sequencer?: Sequencer;
   conversationId?: string;
 }
@@ -32,6 +34,10 @@ export interface ExtensionResponse<T = unknown> {
   error?: string;
   count?: number;
   message?: string;
+  /** Per-thread messages keyed by the LinkedIn URN. Populated by SCRAPE_ALL. */
+  threads?: Record<string, ConversationMessage[]>;
+  /** How many conversation threads the scraper opened while collecting. */
+  threadsScraped?: number;
 }
 
 // Conversation Types
